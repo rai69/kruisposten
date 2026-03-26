@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Triodos.KruispostMonitor/Triodos.KruispostMonitor.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Triodos.KruispostMonitor.Tests/Triodos.KruispostMonitor.Tests.csproj" />
+  </Folder>
+</Solution>
