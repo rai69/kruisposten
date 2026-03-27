@@ -50,3 +50,15 @@ public class StateSettings
     public const string SectionName = "State";
     public string FilePath { get; set; } = "state.json";
 }
+
+public class TransactionSourceSettings
+{
+    public const string SectionName = "TransactionSource";
+    public string Mode { get; set; } = "Ponto";
+    public Mt940Settings Mt940 { get; set; } = new();
+}
+
+public class Mt940Settings
+{
+    public string FilePath { get; set; } = string.Empty;
+}
