@@ -7,6 +7,7 @@ using Triodos.KruispostMonitor.Configuration;
 using Triodos.KruispostMonitor.Matching;
 using Triodos.KruispostMonitor.Notifications;
 using Triodos.KruispostMonitor.Ponto;
+using Triodos.KruispostMonitor.Interactive;
 using Triodos.KruispostMonitor.State;
 using Triodos.KruispostMonitor.TransactionSource;
 
@@ -72,10 +73,51 @@ try
 
     // Match transactions
     var matcher = new TransactionMatcher(matchingSettings);
-    var matchResult = matcher.Match(sourceResult.Transactions, state.MatchedTransactionIds);
+
+    // Include previously saved manual match IDs in exclusion set
+    var excludedIds = new HashSet<string>(state.MatchedTransactionIds);
+    foreach (var mm in state.ManualMatches)
+    {
+        foreach (var id in mm.DebitIds) excludedIds.Add(id);
+        foreach (var id in mm.CreditIds) excludedIds.Add(id);
+    }
+
+    var matchResult = matcher.Match(sourceResult.Transactions, excludedIds);
 
     logger.LogInformation("Matched: {Matched}, Unmatched debits: {Unmatched}, Possible: {Possible}",
         matchResult.Matched.Count, matchResult.UnmatchedDebits.Count, matchResult.PossibleMatches.Count);
+
+    // Interactive mode
+    var isInteractive = args.Contains("--interactive");
+    if (isInteractive)
+    {
+        var server = new InteractiveServer(
+            matchResult,
+            sourceResult.Transactions,
+            sourceResult.CurrentBalance,
+            sourceResult.Currency,
+            sourceResult.AccountIdentifier,
+            state,
+            logger);
+
+        await server.RunAsync();
+
+        // Update match result with manual matches removed from unmatched
+        var manualMatchedIds = server.GetManualMatches()
+            .SelectMany(m => m.DebitIds.Concat(m.CreditIds))
+            .ToHashSet();
+
+        matchResult = new MatchResult
+        {
+            Matched = matchResult.Matched,
+            UnmatchedDebits = matchResult.UnmatchedDebits.Where(t => !manualMatchedIds.Contains(t.Id)).ToList(),
+            UnmatchedCredits = matchResult.UnmatchedCredits.Where(t => !manualMatchedIds.Contains(t.Id)).ToList(),
+            PossibleMatches = matchResult.PossibleMatches
+        };
+
+        logger.LogInformation("After manual matching: {Unmatched} unmatched debits remaining",
+            matchResult.UnmatchedDebits.Count);
+    }
 
     // Build and send notifications
     var message = NotificationMessageBuilder.Build(matchResult, sourceResult.CurrentBalance, matchingSettings.TargetBalance);
