@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,9 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
     Args = args,
     ContentRootPath = AppContext.BaseDirectory
 });
+
+// Ensure user secrets are loaded in all environments
+builder.Configuration.AddUserSecrets<Program>(optional: true);
 
 builder.Services.Configure<PontoSettings>(builder.Configuration.GetSection(PontoSettings.SectionName));
 builder.Services.Configure<MatchingSettings>(builder.Configuration.GetSection(MatchingSettings.SectionName));
