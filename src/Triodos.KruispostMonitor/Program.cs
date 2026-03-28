@@ -1,179 +1,136 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 using Triodos.KruispostMonitor.Configuration;
+using Triodos.KruispostMonitor.Interactive;
 using Triodos.KruispostMonitor.Matching;
 using Triodos.KruispostMonitor.Notifications;
 using Triodos.KruispostMonitor.Ponto;
-using Triodos.KruispostMonitor.Interactive;
+using Triodos.KruispostMonitor.Services;
 using Triodos.KruispostMonitor.State;
 using Triodos.KruispostMonitor.TransactionSource;
 
-var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
-{
-    Args = args,
-    ContentRootPath = AppContext.BaseDirectory
-});
+var builder = WebApplication.CreateBuilder(args);
 
-// Ensure user secrets are loaded in all environments
-builder.Configuration.AddUserSecrets<Program>(optional: true);
-
+// Configuration
 builder.Services.Configure<PontoSettings>(builder.Configuration.GetSection(PontoSettings.SectionName));
 builder.Services.Configure<MatchingSettings>(builder.Configuration.GetSection(MatchingSettings.SectionName));
 builder.Services.Configure<NotificationSettings>(builder.Configuration.GetSection(NotificationSettings.SectionName));
 builder.Services.Configure<StateSettings>(builder.Configuration.GetSection(StateSettings.SectionName));
 builder.Services.Configure<TransactionSourceSettings>(builder.Configuration.GetSection(TransactionSourceSettings.SectionName));
+builder.Services.Configure<FileWatcherSettings>(builder.Configuration.GetSection(FileWatcherSettings.SectionName));
 
+// Services
 builder.Services.AddSingleton<IPontoService, PontoService>();
 builder.Services.AddSingleton<IStateStore>(sp =>
     new StateStore(sp.GetRequiredService<IOptions<StateSettings>>().Value.FilePath));
 builder.Services.AddHttpClient<SlackNotificationSender>();
 builder.Services.AddSingleton<INotificationSender, SlackNotificationSender>(sp => sp.GetRequiredService<SlackNotificationSender>());
 builder.Services.AddSingleton<INotificationSender, EmailNotificationSender>();
+builder.Services.AddSingleton<MonitorState>();
+builder.Services.AddSingleton<ProcessingService>();
+builder.Services.AddHostedService<FileWatcherService>();
 
-// Register transaction source based on configured mode
-var sourceMode = builder.Configuration.GetSection(TransactionSourceSettings.SectionName)["Mode"] ?? "Ponto";
-if (string.Equals(sourceMode, "Mt940", StringComparison.OrdinalIgnoreCase))
+var app = builder.Build();
+
+var jsonOptions = new JsonSerializerOptions
 {
-    builder.Services.AddSingleton<ITransactionSource, Mt940TransactionSource>();
-}
-else
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+};
+
+// Dashboard
+app.MapGet("/", () => Results.Content(InteractivePage.GetHtml(), "text/html"));
+
+// API — data for dashboard
+app.MapGet("/api/data", (MonitorState monitor) =>
 {
-    builder.Services.AddSingleton<ITransactionSource, PontoTransactionSource>();
-}
+    if (monitor.CurrentMatchResult is null)
+        return Results.Json(new { ready = false, isWatching = monitor.IsWatching }, jsonOptions);
 
-using var host = builder.Build();
-var logger = host.Services.GetRequiredService<ILogger<Program>>();
-
-try
-{
-    var transactionSource = host.Services.GetRequiredService<ITransactionSource>();
-    var stateStore = host.Services.GetRequiredService<IStateStore>();
-    var matchingSettings = host.Services.GetRequiredService<IOptions<MatchingSettings>>().Value;
-    var notificationSenders = host.Services.GetRequiredService<IEnumerable<INotificationSender>>();
-
-    // Load state
-    var state = await stateStore.LoadAsync();
-    logger.LogInformation("Last run: {LastRun}", state.LastRunUtc?.ToString("o") ?? "never");
-
-    // Pass stored refresh token to Ponto source if available
-    if (transactionSource is PontoTransactionSource pontoSource && state.RefreshToken is not null)
+    return Results.Json(new
     {
-        pontoSource.StoredRefreshToken = state.RefreshToken;
-    }
-
-    // Fetch transactions from configured source
-    logger.LogInformation("Using transaction source: {Mode}", sourceMode);
-    var sourceResult = await transactionSource.FetchTransactionsAsync(state.LastRunUtc);
-
-    logger.LogInformation("Account {Account}, balance {Balance} {Currency}, {Count} transactions",
-        sourceResult.AccountIdentifier, sourceResult.CurrentBalance, sourceResult.Currency, sourceResult.Transactions.Count);
-
-    // Match transactions
-    var matcher = new TransactionMatcher(matchingSettings);
-
-    // Include previously saved manual match IDs in exclusion set
-    var excludedIds = new HashSet<string>(state.MatchedTransactionIds);
-    foreach (var mm in state.ManualMatches)
-    {
-        foreach (var id in mm.DebitIds) excludedIds.Add(id);
-        foreach (var id in mm.CreditIds) excludedIds.Add(id);
-    }
-
-    var matchResult = matcher.Match(sourceResult.Transactions, excludedIds);
-
-    logger.LogInformation("Matched: {Matched}, Unmatched debits: {Unmatched}, Possible: {Possible}",
-        matchResult.Matched.Count, matchResult.UnmatchedDebits.Count, matchResult.PossibleMatches.Count);
-
-    // Interactive mode
-    var isInteractive = args.Contains("--interactive");
-    if (isInteractive)
-    {
-        var server = new InteractiveServer(
-            matchResult,
-            sourceResult.Transactions,
-            sourceResult.CurrentBalance,
-            sourceResult.Currency,
-            sourceResult.AccountIdentifier,
-            state,
-            logger);
-
-        await server.RunAsync();
-
-        // Update match result with manual matches removed from unmatched
-        var manualMatchedIds = server.GetManualMatches()
-            .SelectMany(m => m.DebitIds.Concat(m.CreditIds))
-            .ToHashSet();
-
-        matchResult = new MatchResult
+        ready = true,
+        accountIdentifier = monitor.AccountIdentifier,
+        currency = monitor.Currency,
+        currentBalance = monitor.CurrentBalance,
+        transactionCount = monitor.AllTransactions.Count,
+        lastProcessedFile = monitor.LastProcessedFile,
+        lastRunUtc = monitor.State.LastRunUtc?.ToString("o"),
+        isWatching = monitor.IsWatching,
+        history = monitor.History.Take(20),
+        autoMatched = monitor.CurrentMatchResult.Matched.Select(m => new
         {
-            Matched = matchResult.Matched,
-            UnmatchedDebits = matchResult.UnmatchedDebits.Where(t => !manualMatchedIds.Contains(t.Id)).ToList(),
-            UnmatchedCredits = matchResult.UnmatchedCredits.Where(t => !manualMatchedIds.Contains(t.Id)).ToList(),
-            PossibleMatches = matchResult.PossibleMatches
-        };
-
-        logger.LogInformation("After manual matching: {Unmatched} unmatched debits remaining",
-            matchResult.UnmatchedDebits.Count);
-    }
-
-    // Build and send notifications
-    var message = NotificationMessageBuilder.Build(matchResult, sourceResult.CurrentBalance, matchingSettings.TargetBalance);
-
-    if (message is not null)
-    {
-        logger.LogWarning("Issues detected, sending notifications");
-        foreach (var sender in notificationSenders.Where(s => s.IsEnabled))
+            debit = TxDto(m.Debit),
+            credit = TxDto(m.Credit)
+        }),
+        manualMatches = monitor.PendingManualMatches.Select((mm, i) =>
         {
-            try
-            {
-                await sender.SendAsync(message);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to send notification via {Sender}", sender.GetType().Name);
-            }
-        }
-    }
-    else
-    {
-        logger.LogInformation("All clear — no issues found");
-        var notifyOnSuccess = host.Services.GetRequiredService<IOptions<NotificationSettings>>().Value.NotifyOnSuccess;
-        if (notifyOnSuccess)
-        {
-            var successMsg = NotificationMessageBuilder.BuildSuccess(sourceResult.CurrentBalance, sourceResult.Currency);
-            foreach (var sender in notificationSenders.Where(s => s.IsEnabled))
-            {
-                try { await sender.SendAsync(successMsg); }
-                catch (Exception ex) { logger.LogError(ex, "Failed to send success notification via {Sender}", sender.GetType().Name); }
-            }
-        }
-    }
+            var debits = mm.DebitIds.Select(id => monitor.AllTransactions.First(t => t.Id == id)).ToList();
+            var credits = mm.CreditIds.Select(id => monitor.AllTransactions.First(t => t.Id == id)).ToList();
+            return new { debits = debits.Select(TxDto), credits = credits.Select(TxDto) };
+        }),
+        unmatchedDebits = monitor.UnmatchedDebits.Select(TxDto),
+        unmatchedCredits = monitor.UnmatchedCredits.Select(TxDto)
+    }, jsonOptions);
+});
 
-    // Update state
-    foreach (var pair in matchResult.Matched)
-    {
-        state.MatchedTransactionIds.Add(pair.Debit.Id);
-        state.MatchedTransactionIds.Add(pair.Credit.Id);
-    }
-
-    state.LastRunUtc = DateTimeOffset.UtcNow;
-
-    // Persist refresh token only in Ponto mode
-    if (transactionSource is PontoTransactionSource pts)
-    {
-        state.RefreshToken = pts.LatestRefreshToken;
-    }
-
-    await stateStore.SaveAsync(state);
-
-    logger.LogInformation("State saved. Done.");
-    return 0;
-}
-catch (Exception ex)
+// API — manual match
+app.MapPost("/api/match", async (HttpContext ctx, MonitorState monitor) =>
 {
-    logger.LogCritical(ex, "Unhandled exception");
-    return 1;
-}
+    var body = await JsonSerializer.DeserializeAsync<MatchRequest>(ctx.Request.Body, jsonOptions);
+    if (body is null) return Results.BadRequest("Invalid request");
+
+    if (monitor.TryAddManualMatch(body.DebitIds, body.CreditIds, out var error))
+        return Results.Ok();
+    return Results.BadRequest(error);
+});
+
+// API — undo manual match
+app.MapPost("/api/unmatch", async (HttpContext ctx, MonitorState monitor) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<UnmatchRequest>(ctx.Request.Body, jsonOptions);
+    if (body is null) return Results.BadRequest("Invalid request");
+
+    if (monitor.TryUndoManualMatch(body.Index, out var error))
+        return Results.Ok();
+    return Results.BadRequest(error);
+});
+
+// API — save manual matches
+app.MapPost("/api/save-matches", async (MonitorState monitor, IStateStore stateStore) =>
+{
+    monitor.SaveManualMatches();
+    await stateStore.SaveAsync(monitor.State);
+    return Results.Ok();
+});
+
+// API — manually trigger reprocessing
+app.MapPost("/api/process", async (MonitorState monitor, ProcessingService processing, IOptions<FileWatcherSettings> settings) =>
+{
+    if (monitor.LastProcessedFile is null)
+        return Results.BadRequest("No file has been processed yet");
+
+    // Reprocess from the processed folder
+    var processedPath = Path.Combine(settings.Value.ProcessedPath, monitor.LastProcessedFile);
+    if (!File.Exists(processedPath))
+        return Results.BadRequest($"File not found: {monitor.LastProcessedFile}");
+
+    await processing.ProcessFileAsync(processedPath);
+    return Results.Ok();
+});
+
+app.Run("http://0.0.0.0:8080");
+
+static object TxDto(TransactionRecord t) => new
+{
+    id = t.Id,
+    amount = t.Amount,
+    absoluteAmount = t.AbsoluteAmount,
+    counterpartName = t.CounterpartName,
+    remittanceInformation = t.RemittanceInformation,
+    executionDate = t.ExecutionDate.ToString("yyyy-MM-dd")
+};
+
+record MatchRequest(List<string> DebitIds, List<string> CreditIds);
+record UnmatchRequest(int Index);
