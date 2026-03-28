@@ -8,3 +8,7 @@ state.json
 appsettings.Development.json
 appsettings.*.json
 !appsettings.json
+import/
+processed/
+state/
+.superpowers/
