@@ -65,6 +65,8 @@ public static class InteractivePage
   .btn-warning:hover { background: #e65100; }
   .btn-danger { background: #e0e0e0; color: #c62828; font-size: 12px; padding: 4px 12px; }
   .btn-danger:hover { background: #ffcdd2; }
+  .btn-exclude { background: none; border: 1px solid #ccc; color: #999; border-radius: 4px; cursor: pointer; font-size: 11px; padding: 2px 6px; }
+  .btn-exclude:hover { background: #ffcdd2; color: #c62828; border-color: #c62828; }
   .auto-row { display: flex; align-items: center; padding: 5px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
   .auto-row .side { flex: 1; }
   .auto-row .arrow { color: #999; margin: 0 8px; font-size: 16px; }
@@ -129,12 +131,12 @@ public static class InteractivePage
 <div class="two-col" id="unmatched-area">
   <div class="section">
     <h2>Unmatched debits <span class="badge red" id="debit-count"></span></h2>
-    <table><thead><tr><th style="width:30px"></th><th>Date</th><th>Amount</th><th>Description</th></tr></thead>
+    <table><thead><tr><th style="width:30px"></th><th>Date</th><th>Amount</th><th>Description</th><th style="width:40px"></th></tr></thead>
     <tbody id="debit-list"></tbody></table>
   </div>
   <div class="section">
     <h2>Unmatched credits <span class="badge blue" id="credit-count"></span></h2>
-    <table><thead><tr><th style="width:30px"></th><th>Date</th><th>Amount</th><th>Description</th></tr></thead>
+    <table><thead><tr><th style="width:30px"></th><th>Date</th><th>Amount</th><th>Description</th><th style="width:40px"></th></tr></thead>
     <tbody id="credit-list"></tbody></table>
   </div>
 </div>
@@ -293,7 +295,8 @@ function txRow(t, type) {
     <td><div class="check ${checked ? 'checked' : ''}">${checked ? '\u2713' : ''}</div></td>
     <td>${t.executionDate.substring(5,10)}</td>
     <td class="amount ${cls}">${sign}${t.absoluteAmount.toFixed(2)}</td>
-    <td>${esc(t.counterpartName)}</td></tr>`;
+    <td>${esc(t.counterpartName)}</td>
+    <td><button class="btn-exclude" onclick="event.stopPropagation(); doExclude('${t.id}')" title="Exclude — already settled">\u2716</button></td></tr>`;
 }
 
 function toggleTx(id, type) {
@@ -356,6 +359,14 @@ async function doUnmatch(index) {
   isLoading = false;
   if (resp.ok) { await loadData(); }
   else { alert('Unmatch failed: ' + await resp.text()); }
+}
+
+async function doExclude(id) {
+  isLoading = true;
+  const resp = await fetch('/api/exclude', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+  isLoading = false;
+  if (resp.ok) { selectedDebits.delete(id); selectedCredits.delete(id); await loadData(); }
+  else { alert('Exclude failed: ' + await resp.text()); }
 }
 
 async function doSave() {

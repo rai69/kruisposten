@@ -97,6 +97,19 @@ app.MapPost("/api/unmatch", async (HttpContext ctx, MonitorState monitor) =>
     return Results.BadRequest(error);
 });
 
+// API — exclude transaction (already settled)
+app.MapPost("/api/exclude", async (HttpContext ctx, MonitorState monitor, IStateStore stateStore) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<ExcludeRequest>(ctx.Request.Body, jsonOptions);
+    if (body is null || string.IsNullOrEmpty(body.Id)) return Results.BadRequest("Invalid request");
+
+    if (!monitor.TryExcludeTransaction(body.Id))
+        return Results.BadRequest("Transaction not found in unmatched lists");
+
+    await stateStore.SaveAsync(monitor.State);
+    return Results.Ok();
+});
+
 // API — save manual matches
 app.MapPost("/api/save-matches", async (MonitorState monitor, IStateStore stateStore) =>
 {
@@ -134,3 +147,4 @@ static object TxDto(TransactionRecord t) => new
 
 record MatchRequest(List<string> DebitIds, List<string> CreditIds);
 record UnmatchRequest(int Index);
+record ExcludeRequest(string Id);

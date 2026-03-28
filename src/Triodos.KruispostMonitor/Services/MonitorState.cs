@@ -129,4 +129,18 @@ public class MonitorState
             PendingManualMatches = [];
         }
     }
+
+    public bool TryExcludeTransaction(string id)
+    {
+        lock (_lock)
+        {
+            var removed = UnmatchedDebits.RemoveAll(t => t.Id == id)
+                        + UnmatchedCredits.RemoveAll(t => t.Id == id);
+
+            if (removed == 0) return false;
+
+            State.ExcludedTransactionIds.Add(id);
+            return true;
+        }
+    }
 }

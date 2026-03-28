@@ -10,5 +10,5 @@ appsettings.*.json
 !appsettings.json
 import/
 processed/
-state/
+/state/
 .superpowers/

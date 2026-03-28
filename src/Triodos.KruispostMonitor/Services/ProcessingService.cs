@@ -58,13 +58,14 @@ public class ProcessingService
         // Load state
         var state = await _stateStore.LoadAsync();
 
-        // Build exclusion set (auto-matched + manual matches)
+        // Build exclusion set (auto-matched + manual matches + excluded)
         var excludedIds = new HashSet<string>(state.MatchedTransactionIds);
         foreach (var mm in state.ManualMatches)
         {
             foreach (var id in mm.DebitIds) excludedIds.Add(id);
             foreach (var id in mm.CreditIds) excludedIds.Add(id);
         }
+        excludedIds.UnionWith(state.ExcludedTransactionIds);
 
         // Auto-match
         var matcher = new TransactionMatcher(_matchingSettings);
