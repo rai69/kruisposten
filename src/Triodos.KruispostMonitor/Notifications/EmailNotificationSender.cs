@@ -22,7 +22,7 @@ public class EmailNotificationSender : INotificationSender
         _logger = logger;
     }
 
-    public async Task SendAsync(string message, CancellationToken cancellationToken = default)
+    public async Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default)
     {
         if (!IsEnabled) return;
 
@@ -31,8 +31,8 @@ public class EmailNotificationSender : INotificationSender
         foreach (var to in _settings.ToAddresses)
             email.To.Add(MailboxAddress.Parse(to));
 
-        email.Subject = message.Split('\n', 2)[0];
-        email.Body = new TextPart("plain") { Text = message };
+        email.Subject = message.Subject;
+        email.Body = new TextPart("html") { Text = message.Html };
 
         using var smtp = new SmtpClient();
         var socketOptions = _settings.UseSsl

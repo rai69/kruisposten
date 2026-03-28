@@ -101,7 +101,7 @@ try
         var notifyOnSuccess = host.Services.GetRequiredService<IOptions<NotificationSettings>>().Value.NotifyOnSuccess;
         if (notifyOnSuccess)
         {
-            var successMsg = $"Kruispost Monitor — all clear. Balance: {sourceResult.Currency} {sourceResult.CurrentBalance:F2}";
+            var successMsg = NotificationMessageBuilder.BuildSuccess(sourceResult.CurrentBalance, sourceResult.Currency);
             foreach (var sender in notificationSenders.Where(s => s.IsEnabled))
             {
                 try { await sender.SendAsync(successMsg); }

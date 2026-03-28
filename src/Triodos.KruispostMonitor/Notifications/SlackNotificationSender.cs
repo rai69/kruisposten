@@ -24,11 +24,11 @@ public class SlackNotificationSender : INotificationSender
         _logger = logger;
     }
 
-    public async Task SendAsync(string message, CancellationToken cancellationToken = default)
+    public async Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default)
     {
         if (!IsEnabled) return;
 
-        var payload = JsonSerializer.Serialize(new { text = message });
+        var payload = JsonSerializer.Serialize(new { text = message.PlainText });
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
 
         var response = await _httpClient.PostAsync(_settings.WebhookUrl, content, cancellationToken);

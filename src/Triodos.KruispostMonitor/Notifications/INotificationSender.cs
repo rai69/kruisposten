@@ -1,7 +1,9 @@
 namespace Triodos.KruispostMonitor.Notifications;
 
+public record NotificationMessage(string Subject, string PlainText, string Html);
+
 public interface INotificationSender
 {
-    Task SendAsync(string message, CancellationToken cancellationToken = default);
+    Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default);
     bool IsEnabled { get; }
 }
