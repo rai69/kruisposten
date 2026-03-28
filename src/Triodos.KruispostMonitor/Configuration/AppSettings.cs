@@ -62,3 +62,10 @@ public class Mt940Settings
 {
     public string FilePath { get; set; } = string.Empty;
 }
+
+public class FileWatcherSettings
+{
+    public const string SectionName = "FileWatcher";
+    public string WatchPath { get; set; } = "/data/import";
+    public string ProcessedPath { get; set; } = "/data/processed";
+}
