@@ -145,6 +145,41 @@ public class Mt940ParserTests
         """;
 
     [Fact]
+    public void Parse_TriodosNpoTransactions_AreExcluded()
+    {
+        var content = """
+            :20:STARTOFSTMT
+            :25:NL91TRIO0123456789
+            :28C:00001
+            :60F:C260326EUR2000,00
+            :61:260326C1650,00NPO NONREF
+            :86:000>100000000000
+            >20TRIONL2U
+            >21NL18TRIO0338481796
+            >22R.F.B. KUIPERS EN/OF I. OVE>23RIGE UITGAVEN
+            >310338505768
+            :61:260326D60,00NPO NONREF
+            :86:000>100000000000
+            >20TRIONL2U
+            >21NL06TRIO2300470845
+            >22R.F.B. KUIPERS EN/OF I. INI>23A SCHOOL
+            >310338505768
+            :61:260326D11,98NBA NONREF
+            :86:000>100000000000
+            >20HOLLAND & BARRETT - ENSCHED>21E - TERMINAL 0MXK4N - 28-02
+            >22-2026 11:06 - PASNR. *1991 >23- CONTACTLOOS - APPLE PAY
+            >310338505768
+            :62F:C260326EUR1878,02
+            """;
+
+        var result = Mt940Parser.Parse(content);
+
+        // Only the NBA transaction should remain, NPO excluded
+        result.Transactions.Should().HaveCount(1);
+        result.Transactions[0].Amount.Should().Be(-11.98m);
+    }
+
+    [Fact]
     public void Parse_TriodosCardPayment_ExtractsMerchantName()
     {
         var result = Mt940Parser.Parse(TriodosStatement);

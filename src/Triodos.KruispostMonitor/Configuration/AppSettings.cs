@@ -15,7 +15,7 @@ public class PontoSettings
 public class MatchingSettings
 {
     public const string SectionName = "Matching";
-    public double SimilarityThreshold { get; set; } = 0.7;
+    public double SimilarityThreshold { get; set; } = 0.5;
     public decimal TargetBalance { get; set; } = 300.00m;
 }
 

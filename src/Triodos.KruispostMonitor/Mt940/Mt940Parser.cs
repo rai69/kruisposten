@@ -86,6 +86,10 @@ public static class Mt940Parser
             var transactionLine = trimmed[4..];
             var (date, amount, debitCredit, txType) = ParseTransactionLine(transactionLine);
 
+            // Skip NPO (standing order / budget allocation) transactions
+            if (txType == "NPO")
+                continue;
+
             // Collect :86: information (may span multiple lines)
             var rawDetails = CollectDetails(lines, i + 1);
             var (counterpartName, remittanceInfo) = ParseDetails(rawDetails, txType);
@@ -98,7 +102,8 @@ public static class Mt940Parser
                 signedAmount,
                 counterpartName,
                 remittanceInfo,
-                new DateTimeOffset(date, TimeSpan.Zero)));
+                new DateTimeOffset(date, TimeSpan.Zero),
+                txType));
         }
 
         return transactions;

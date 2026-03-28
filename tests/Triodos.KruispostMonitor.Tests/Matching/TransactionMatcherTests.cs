@@ -8,7 +8,7 @@ public class TransactionMatcherTests
 {
     private readonly MatchingSettings _settings = new()
     {
-        SimilarityThreshold = 0.7,
+        SimilarityThreshold = 0.5,
         TargetBalance = 300.00m
     };
 
@@ -51,7 +51,7 @@ public class TransactionMatcherTests
     }
 
     [Fact]
-    public void Match_SameAmountDifferentReference_ReturnsUnmatched()
+    public void Match_SameAmountDifferentReference_MatchesOnAmountAlone()
     {
         var transactions = new List<TransactionRecord>
         {
@@ -61,9 +61,24 @@ public class TransactionMatcherTests
 
         var result = new TransactionMatcher(_settings).Match(transactions, []);
 
+        // Amount match alone is sufficient at default threshold
+        result.Matched.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Match_HighThreshold_RequiresTextSimilarity()
+    {
+        var settings = new MatchingSettings { SimilarityThreshold = 0.8, TargetBalance = 300m };
+        var transactions = new List<TransactionRecord>
+        {
+            Debit("d1", 35.00m, "Albert Heijn", "Boodschappen"),
+            Credit("c1", 35.00m, "Hypotheek Bank", "Maandelijkse afschrijving")
+        };
+
+        var result = new TransactionMatcher(settings).Match(transactions, []);
+
         result.Matched.Should().BeEmpty();
-        result.UnmatchedDebits.Should().HaveCount(1);
-        result.UnmatchedCredits.Should().HaveCount(1);
+        result.PossibleMatches.Should().HaveCount(1);
     }
 
     [Fact]
@@ -100,7 +115,7 @@ public class TransactionMatcherTests
     }
 
     [Fact]
-    public void Match_PossibleMatch_WhenAmountMatchesButReferenceLowSimilarity()
+    public void Match_PossibleMatch_WhenAmountMatchesButHighThreshold()
     {
         var settings = new MatchingSettings { SimilarityThreshold = 0.9, TargetBalance = 300m };
         var transactions = new List<TransactionRecord>
@@ -113,5 +128,37 @@ public class TransactionMatcherTests
 
         result.Matched.Should().BeEmpty();
         result.PossibleMatches.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Match_KruispostPattern_DifferentNamesMatchOnAmount()
+    {
+        // Real kruispost: debit is merchant name, credit is partner name + description
+        var transactions = new List<TransactionRecord>
+        {
+            Debit("d1", 11.98m, "HOLLAND & BARRETT - ENSCHEDE", "TERMINAL 0MXK4N", "2026-03-01"),
+            Credit("c1", 11.98m, "R.F.B. KUIPERS EN/OF I. HOLLAND BARRETT", "IBAN: NL36TRIO2300471469", "2026-03-02")
+        };
+
+        var result = new TransactionMatcher(_settings).Match(transactions, []);
+
+        result.Matched.Should().HaveCount(1);
+        result.UnmatchedDebits.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Match_MultipleCreditsForSameAmount_PicksClosestDate()
+    {
+        var transactions = new List<TransactionRecord>
+        {
+            Debit("d1", 12.25m, "FC TWENTE 65", "TERMINAL", "2026-03-02"),
+            Credit("c1", 12.25m, "R.F.B. KUIPERS", "FC TWENTE DRINKEN 1", "2026-03-05"),
+            Credit("c2", 12.25m, "R.F.B. KUIPERS", "FC TWENTE DRINKEN 2", "2026-03-05")
+        };
+
+        var result = new TransactionMatcher(_settings).Match(transactions, []);
+
+        result.Matched.Should().HaveCount(1);
+        result.UnmatchedCredits.Should().HaveCount(1);
     }
 }

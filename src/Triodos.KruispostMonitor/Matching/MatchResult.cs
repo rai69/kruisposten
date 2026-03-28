@@ -5,7 +5,8 @@ public record TransactionRecord(
     decimal Amount,
     string CounterpartName,
     string RemittanceInformation,
-    DateTimeOffset ExecutionDate)
+    DateTimeOffset ExecutionDate,
+    string TransactionType = "")
 {
     public bool IsDebit => Amount < 0;
     public bool IsCredit => Amount > 0;

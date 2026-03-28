@@ -35,14 +35,14 @@ public class TransactionMatcher
             if (bestCredit is null)
                 continue;
 
-            if (bestCredit.Value.similarity >= _settings.SimilarityThreshold)
+            if (bestCredit.Value.score >= _settings.SimilarityThreshold)
             {
-                matched.Add(new MatchedPair(debit, bestCredit.Value.credit, bestCredit.Value.similarity));
+                matched.Add(new MatchedPair(debit, bestCredit.Value.credit, bestCredit.Value.score));
                 usedCreditIds.Add(bestCredit.Value.credit.Id);
             }
-            else if (bestCredit.Value.similarity >= PossibleMatchMinThreshold)
+            else if (bestCredit.Value.score >= PossibleMatchMinThreshold)
             {
-                possibleMatches.Add(new PossibleMatch(debit, bestCredit.Value.credit, bestCredit.Value.similarity));
+                possibleMatches.Add(new PossibleMatch(debit, bestCredit.Value.credit, bestCredit.Value.score));
             }
         }
 
@@ -64,12 +64,12 @@ public class TransactionMatcher
         };
     }
 
-    private static (TransactionRecord credit, double similarity)? FindBestCredit(
+    private static (TransactionRecord credit, double score)? FindBestCredit(
         TransactionRecord debit,
         List<TransactionRecord> credits,
         HashSet<string> usedCreditIds)
     {
-        (TransactionRecord credit, double similarity)? best = null;
+        (TransactionRecord credit, double score)? best = null;
 
         foreach (var credit in credits)
         {
@@ -79,16 +79,21 @@ public class TransactionMatcher
             if (credit.AbsoluteAmount != debit.AbsoluteAmount)
                 continue;
 
+            // Amount match gives a base score of 0.5 (enough to exceed PossibleMatchMinThreshold)
+            // Name/reference similarity adds up to 0.4
+            // Date proximity adds up to 0.1 (closer = higher)
             var nameSimilarity = StringSimilarity.Calculate(debit.CounterpartName, credit.CounterpartName);
             var refSimilarity = StringSimilarity.Calculate(debit.RemittanceInformation, credit.RemittanceInformation);
-            var similarity = Math.Max(nameSimilarity, refSimilarity);
+            var textSimilarity = Math.Max(nameSimilarity, refSimilarity);
 
-            if (best is null || similarity > best.Value.similarity ||
-                (Math.Abs(similarity - best.Value.similarity) < 0.001 &&
-                 Math.Abs((credit.ExecutionDate - debit.ExecutionDate).TotalDays) <
-                 Math.Abs((best.Value.credit.ExecutionDate - debit.ExecutionDate).TotalDays)))
+            var daysDiff = Math.Abs((credit.ExecutionDate - debit.ExecutionDate).TotalDays);
+            var dateProximity = daysDiff <= 7 ? (7 - daysDiff) / 7.0 : 0;
+
+            var score = 0.5 + (textSimilarity * 0.4) + (dateProximity * 0.1);
+
+            if (best is null || score > best.Value.score)
             {
-                best = (credit, similarity);
+                best = (credit, score);
             }
         }
 
