@@ -40,9 +40,12 @@ public static class NotificationMessageBuilder
             for (var i = 0; i < result.UnmatchedDebits.Count; i++)
             {
                 var d = result.UnmatchedDebits[i];
-                sb.AppendLine(string.Format(culture,
-                    "  {0}. {1:yyyy-MM-dd}  -EUR {2:F2}  {3}  \"{4}\"",
-                    i + 1, d.ExecutionDate, d.AbsoluteAmount, d.CounterpartName, d.RemittanceInformation));
+                if (i > 0) sb.AppendLine();
+                sb.AppendLine(string.Format(culture, "  {0}. {1}", i + 1, d.CounterpartName));
+                sb.AppendLine(string.Format(culture, "     Date:   {0:yyyy-MM-dd}", d.ExecutionDate));
+                sb.AppendLine(string.Format(culture, "     Amount: -EUR {0:F2}", d.AbsoluteAmount));
+                if (!string.IsNullOrWhiteSpace(d.RemittanceInformation))
+                    sb.AppendLine(string.Format(culture, "     Ref:    {0}", d.RemittanceInformation));
             }
         }
 
@@ -53,10 +56,10 @@ public static class NotificationMessageBuilder
             for (var i = 0; i < result.PossibleMatches.Count; i++)
             {
                 var pm = result.PossibleMatches[i];
-                sb.AppendLine(string.Format(culture,
-                    "  {0}. {1:yyyy-MM-dd}  -EUR {2:F2}  {3} <-> {4:yyyy-MM-dd}  +EUR {5:F2}  \"{6}\"",
-                    i + 1, pm.Debit.ExecutionDate, pm.Debit.AbsoluteAmount, pm.Debit.CounterpartName,
-                    pm.Credit.ExecutionDate, pm.Credit.AbsoluteAmount, pm.Credit.RemittanceInformation));
+                if (i > 0) sb.AppendLine();
+                sb.AppendLine(string.Format(culture, "  {0}. {1}", i + 1, pm.Debit.CounterpartName));
+                sb.AppendLine(string.Format(culture, "     Debit:  {0:yyyy-MM-dd}  -EUR {1:F2}", pm.Debit.ExecutionDate, pm.Debit.AbsoluteAmount));
+                sb.AppendLine(string.Format(culture, "     Credit: {0:yyyy-MM-dd}  +EUR {1:F2}  {2}", pm.Credit.ExecutionDate, pm.Credit.AbsoluteAmount, pm.Credit.RemittanceInformation));
             }
         }
 
