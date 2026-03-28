@@ -55,7 +55,7 @@ public class InteractiveServer
     public async Task RunAsync()
     {
         var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://localhost:0");
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
 
         var app = builder.Build();
@@ -68,7 +68,7 @@ public class InteractiveServer
 
         await app.StartAsync();
 
-        var address = app.Urls.First();
+        var address = app.Urls.First().Replace("127.0.0.1", "localhost");
         _logger.LogInformation("Interactive matching UI available at {Url}", address);
 
         // Try to open browser
