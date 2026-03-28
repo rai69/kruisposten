@@ -117,4 +117,59 @@ public class Mt940ParserTests
         var result = Mt940Parser.Parse(content);
         result.ClosingBalance.Should().Be(-500.00m);
     }
+
+    private const string TriodosStatement = """
+        :20:1774607603607/1
+        :25:TRIODOSBANK/0338505768
+        :28:1
+        :60F:C260301EUR335,31
+        :61:260301D11,98NBA NONREF
+        :86:000>100000000000
+        >20HOLLAND & BARRETT - ENSCHED>21E - TERMINAL 0MXK4N - 28-02
+        >22-2026 11:06 - PASNR. *1991 >23- CONTACTLOOS - APPLE PAY
+        >310338505768
+        :61:260301C35,90NET NONREF
+        :86:000>100000000000
+        >20TRIONL2U
+        >21NL36TRIO2300471469
+        >22R.F.B. KUIPERS EN/OF I. VER>23REKENEN BIOMOS BOL
+        >310338505768
+        :61:260302D35,90NID NONREF
+        :86:000>100000000000
+        >20INGBNL2A
+        >21NL27INGB0000026500
+        >22BOL.COM P1657059212 7051616>23855068149 BOL.COM C0001H18T
+        >24D
+        >310338505768
+        :62F:C260301EUR335,31
+        """;
+
+    [Fact]
+    public void Parse_TriodosCardPayment_ExtractsMerchantName()
+    {
+        var result = Mt940Parser.Parse(TriodosStatement);
+        var card = result.Transactions[0];
+        card.CounterpartName.Should().Be("HOLLAND & BARRETT - ENSCHEDE");
+        card.Amount.Should().Be(-11.98m);
+    }
+
+    [Fact]
+    public void Parse_TriodosTransferIn_ExtractsCounterpartFromNarrative()
+    {
+        var result = Mt940Parser.Parse(TriodosStatement);
+        var transfer = result.Transactions[1];
+        transfer.CounterpartName.Should().Contain("KUIPERS");
+        transfer.RemittanceInformation.Should().Contain("NL36TRIO2300471469");
+        transfer.Amount.Should().Be(35.90m);
+    }
+
+    [Fact]
+    public void Parse_TriodosTransferOut_ExtractsCounterpartFromNarrative()
+    {
+        var result = Mt940Parser.Parse(TriodosStatement);
+        var transfer = result.Transactions[2];
+        transfer.CounterpartName.Should().Contain("BOL.COM");
+        transfer.RemittanceInformation.Should().Contain("NL27INGB0000026500");
+        transfer.Amount.Should().Be(-35.90m);
+    }
 }

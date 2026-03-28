@@ -84,11 +84,11 @@ public static class Mt940Parser
                 continue;
 
             var transactionLine = trimmed[4..];
-            var (date, amount, debitCredit) = ParseTransactionLine(transactionLine);
+            var (date, amount, debitCredit, txType) = ParseTransactionLine(transactionLine);
 
             // Collect :86: information (may span multiple lines)
-            var details = CollectDetails(lines, i + 1);
-            var (counterpartName, remittanceInfo) = ParseDetails(details);
+            var rawDetails = CollectDetails(lines, i + 1);
+            var (counterpartName, remittanceInfo) = ParseDetails(rawDetails, txType);
 
             var signedAmount = debitCredit == 'D' ? -amount : amount;
             var id = GenerateId(date, signedAmount, debitCredit, counterpartName, remittanceInfo);
@@ -104,9 +104,9 @@ public static class Mt940Parser
         return transactions;
     }
 
-    private static (DateTime date, decimal amount, char debitCredit) ParseTransactionLine(string line)
+    private static (DateTime date, decimal amount, char debitCredit, string txType) ParseTransactionLine(string line)
     {
-        // Format: YYMMDD[MMDD]D/Camount...
+        // Format: YYMMDD[MMDD]D/Camount N3-char-type ...
         var year = 2000 + int.Parse(line[..2]);
         var month = int.Parse(line[2..4]);
         var day = int.Parse(line[4..6]);
@@ -138,7 +138,18 @@ public static class Mt940Parser
         var amountStr = line[pos..amountEnd].Replace(',', '.');
         var amount = decimal.Parse(amountStr, CultureInfo.InvariantCulture);
 
-        return (date, amount, debitCredit);
+        // Transaction type: 1 letter + 3 alphanumeric chars (e.g. NBA, NET, NID, NKN)
+        var txType = string.Empty;
+        pos = amountEnd;
+        if (pos < line.Length && char.IsLetter(line[pos]))
+        {
+            var typeEnd = pos;
+            while (typeEnd < line.Length && line[typeEnd] != ' ')
+                typeEnd++;
+            txType = line[pos..typeEnd];
+        }
+
+        return (date, amount, debitCredit, txType);
     }
 
     private static string CollectDetails(List<string> lines, int startIndex)
@@ -158,39 +169,122 @@ public static class Mt940Parser
                 // Continuation lines for :86: don't start with a tag
                 if (trimmed.StartsWith(':') && trimmed.Length > 3 && trimmed[3] == ':')
                     break;
-                sb.Append('\n').Append(trimmed);
+                // Join continuation lines without separator (they split mid-word in MT940)
+                sb.Append(trimmed);
             }
         }
         return sb.ToString().Trim();
     }
 
-    private static (string counterpartName, string remittanceInfo) ParseDetails(string details)
+    private static Dictionary<string, string> ParseSubfields(string details)
+    {
+        // Parse >XX subfield codes from Triodos MT940 :86: data
+        // Format: headertext>20field20>21field21>22field22...
+        var fields = new Dictionary<string, string>();
+
+        // Find the first >XX marker
+        var firstMarker = details.IndexOf('>');
+        if (firstMarker < 0)
+        {
+            fields["header"] = details;
+            return fields;
+        }
+
+        fields["header"] = details[..firstMarker];
+
+        var pos = firstMarker;
+        while (pos < details.Length)
+        {
+            if (details[pos] != '>' || pos + 2 >= details.Length)
+            {
+                pos++;
+                continue;
+            }
+
+            var code = details[(pos + 1)..(pos + 3)];
+            pos += 3;
+
+            // Find next >XX marker
+            var nextMarker = pos;
+            while (nextMarker < details.Length)
+            {
+                var gt = details.IndexOf('>', nextMarker);
+                if (gt < 0 || gt + 2 >= details.Length)
+                {
+                    nextMarker = details.Length;
+                    break;
+                }
+                // Check if this is a real >XX marker (2 digits)
+                if (char.IsDigit(details[gt + 1]) && char.IsDigit(details[gt + 2]))
+                {
+                    nextMarker = gt;
+                    break;
+                }
+                nextMarker = gt + 1;
+            }
+
+            fields[code] = details[pos..nextMarker];
+            pos = nextMarker;
+        }
+
+        return fields;
+    }
+
+    private static (string counterpartName, string remittanceInfo) ParseDetails(string details, string txType)
     {
         if (string.IsNullOrWhiteSpace(details))
             return (string.Empty, string.Empty);
 
-        var lines = details.Split('\n');
-        var counterpartName = lines[0].Trim();
-        var remittanceInfo = string.Empty;
-
-        // Look for /REMI/ tag in detail lines
-        foreach (var line in lines)
+        // Check for /REMI/ tag first (standard MT940)
+        var remiIndex = details.IndexOf("/REMI/", StringComparison.OrdinalIgnoreCase);
+        if (remiIndex >= 0)
         {
-            var remiIndex = line.IndexOf("/REMI/", StringComparison.OrdinalIgnoreCase);
-            if (remiIndex >= 0)
-            {
-                remittanceInfo = line[(remiIndex + 6)..].Trim();
-                break;
-            }
+            var remi = details[(remiIndex + 6)..].Trim();
+            var name = details[..remiIndex].Split('\n')[0].Trim();
+            return (name, remi);
         }
 
-        // If no /REMI/ found, use remaining lines as remittance info
-        if (string.IsNullOrEmpty(remittanceInfo) && lines.Length > 1)
-        {
-            remittanceInfo = string.Join(" ", lines.Skip(1).Select(l => l.Trim())).Trim();
-        }
+        // Parse Triodos >XX subfield format
+        var fields = ParseSubfields(details);
 
-        return (counterpartName, remittanceInfo);
+        if (!fields.ContainsKey("20"))
+            return (details, string.Empty);
+
+        // For transfers (NET, NID): >20=BIC, >21=IBAN, >22-24=name+description
+        // For card payments (NBA): >20-24=merchant+terminal info
+        // For bank costs (NKN): >20-24=description
+
+        if (txType is "NET" or "NID")
+        {
+            // Combine >22 through >24 for counterpart name + description
+            var narrative = string.Concat(
+                fields.GetValueOrDefault("22", ""),
+                fields.GetValueOrDefault("23", ""),
+                fields.GetValueOrDefault("24", "")).Trim();
+
+            var iban = fields.GetValueOrDefault("21", "").Trim();
+            var counterpart = narrative;
+            var remittance = !string.IsNullOrEmpty(iban) ? $"IBAN: {iban}" : string.Empty;
+
+            return (counterpart, remittance);
+        }
+        else
+        {
+            // Card payments and other: >20-24 is the full description
+            var narrative = string.Concat(
+                fields.GetValueOrDefault("20", ""),
+                fields.GetValueOrDefault("21", ""),
+                fields.GetValueOrDefault("22", ""),
+                fields.GetValueOrDefault("23", ""),
+                fields.GetValueOrDefault("24", "")).Trim();
+
+            // Try to extract merchant name (before " - TERMINAL" or " - ")
+            var termIdx = narrative.IndexOf(" - TERMINAL", StringComparison.OrdinalIgnoreCase);
+            if (termIdx > 0)
+                return (narrative[..termIdx].Trim(), narrative);
+
+            return (narrative, string.Empty);
+        }
     }
 
     private static string GenerateId(DateTime date, decimal amount, char debitCredit, string counterpart, string remittance)
