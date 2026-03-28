@@ -47,7 +47,7 @@ public class NotificationMessageBuilderTests
         var message = NotificationMessageBuilder.Build(result, currentBalance: 282.50m, targetBalance: 300.00m);
 
         message.Should().Contain("Possible match");
-        message.Should().Contain("Terugbetaling");
+        message.Should().Contain("Bol.com");
     }
 
     [Fact]

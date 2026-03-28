@@ -37,32 +37,71 @@ public static class NotificationMessageBuilder
         {
             sb.AppendLine();
             sb.AppendLine("Unmatched expenses:");
-            for (var i = 0; i < result.UnmatchedDebits.Count; i++)
-            {
-                var d = result.UnmatchedDebits[i];
-                if (i > 0) sb.AppendLine();
-                sb.AppendLine(string.Format(culture, "  {0}. {1}", i + 1, d.CounterpartName));
-                sb.AppendLine(string.Format(culture, "     Date:   {0:yyyy-MM-dd}", d.ExecutionDate));
-                sb.AppendLine(string.Format(culture, "     Amount: -EUR {0:F2}", d.AbsoluteAmount));
-                if (!string.IsNullOrWhiteSpace(d.RemittanceInformation))
-                    sb.AppendLine(string.Format(culture, "     Ref:    {0}", d.RemittanceInformation));
-            }
+            sb.AppendLine();
+            AppendTransactionTable(sb, result.UnmatchedDebits, culture, isDebit: true);
+        }
+
+        if (result.UnmatchedCredits.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("Unmatched credits:");
+            sb.AppendLine();
+            AppendTransactionTable(sb, result.UnmatchedCredits, culture, isDebit: false);
         }
 
         if (result.PossibleMatches.Count > 0)
         {
             sb.AppendLine();
             sb.AppendLine("Possible matches (low confidence):");
-            for (var i = 0; i < result.PossibleMatches.Count; i++)
+            sb.AppendLine();
+            foreach (var pm in result.PossibleMatches)
             {
-                var pm = result.PossibleMatches[i];
-                if (i > 0) sb.AppendLine();
-                sb.AppendLine(string.Format(culture, "  {0}. {1}", i + 1, pm.Debit.CounterpartName));
-                sb.AppendLine(string.Format(culture, "     Debit:  {0:yyyy-MM-dd}  -EUR {1:F2}", pm.Debit.ExecutionDate, pm.Debit.AbsoluteAmount));
-                sb.AppendLine(string.Format(culture, "     Credit: {0:yyyy-MM-dd}  +EUR {1:F2}  {2}", pm.Credit.ExecutionDate, pm.Credit.AbsoluteAmount, pm.Credit.RemittanceInformation));
+                sb.AppendLine(string.Format(culture,
+                    "  {0:yyyy-MM-dd}  -EUR {1,8:F2}  {2}",
+                    pm.Debit.ExecutionDate, pm.Debit.AbsoluteAmount, pm.Debit.CounterpartName));
+                sb.AppendLine(string.Format(culture,
+                    "  {0:yyyy-MM-dd}  +EUR {1,8:F2}  {2}",
+                    pm.Credit.ExecutionDate, pm.Credit.AbsoluteAmount, pm.Credit.CounterpartName));
+                sb.AppendLine();
             }
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    private static void AppendTransactionTable(
+        StringBuilder sb,
+        List<TransactionRecord> transactions,
+        CultureInfo culture,
+        bool isDebit)
+    {
+        // Calculate column widths
+        var sign = isDebit ? "-" : "+";
+        var maxNameLen = Math.Min(
+            transactions.Max(t => t.CounterpartName.Length),
+            30);
+
+        // Header
+        sb.AppendLine(string.Format("  {0,-10}  {1,12}  {2}", "Date", "Amount", "Description"));
+        sb.AppendLine(string.Format("  {0}  {1}  {2}", new string('-', 10), new string('-', 12), new string('-', maxNameLen)));
+
+        // Rows
+        foreach (var t in transactions)
+        {
+            var name = t.CounterpartName.Length > 30
+                ? t.CounterpartName[..27] + "..."
+                : t.CounterpartName;
+
+            sb.AppendLine(string.Format(culture,
+                "  {0:yyyy-MM-dd}  {1}EUR {2,8:F2}  {3}",
+                t.ExecutionDate, sign, t.AbsoluteAmount, name));
+        }
+
+        // Total
+        var total = transactions.Sum(t => t.AbsoluteAmount);
+        sb.AppendLine(string.Format("  {0}  {1}  {2}", new string(' ', 10), new string('-', 12), ""));
+        sb.AppendLine(string.Format(culture,
+            "  {0,-10}  {1}EUR {2,8:F2}",
+            "Total", sign, total));
     }
 }
