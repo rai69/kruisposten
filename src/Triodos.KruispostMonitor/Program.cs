@@ -9,7 +9,11 @@ using Triodos.KruispostMonitor.Ponto;
 using Triodos.KruispostMonitor.State;
 using Triodos.KruispostMonitor.TransactionSource;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory
+});
 
 builder.Services.Configure<PontoSettings>(builder.Configuration.GetSection(PontoSettings.SectionName));
 builder.Services.Configure<MatchingSettings>(builder.Configuration.GetSection(MatchingSettings.SectionName));
