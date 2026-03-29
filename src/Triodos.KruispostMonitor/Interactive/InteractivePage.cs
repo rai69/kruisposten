@@ -254,9 +254,9 @@ function render() {
     const show = autoExpanded ? data.autoMatched : data.autoMatched.slice(0, 3);
     document.getElementById('auto-list').innerHTML = show.map(m => `
       <div class="auto-row">
-        <div class="side"><span class="amount debit">${fmt(-m.debit.absoluteAmount)}</span> ${esc(m.debit.counterpartName)}</div>
+        <div class="side"><span class="amount debit">${fmt(-m.debit.absoluteAmount)}</span> ${esc(txLabel(m.debit))}</div>
         <span class="arrow">\u27F7</span>
-        <div class="side"><span class="amount credit">${fmt(m.credit.absoluteAmount)}</span> ${esc(m.credit.counterpartName)}</div>
+        <div class="side"><span class="amount credit">${fmt(m.credit.absoluteAmount)}</span> ${esc(txLabel(m.credit))}</div>
       </div>`).join('');
     const toggle = document.getElementById('auto-toggle');
     if (data.autoMatched.length > 3) {
@@ -271,8 +271,8 @@ function render() {
     manSec.classList.remove('hidden');
     document.getElementById('manual-count').textContent = data.manualMatches.length;
     document.getElementById('manual-list').innerHTML = data.manualMatches.map((g, i) => {
-      const debits = g.debits.map(t => `<div class="group-row"><span class="amount debit">${fmt(-t.absoluteAmount)}</span> ${esc(t.counterpartName)}</div>`).join('');
-      const credits = g.credits.map(t => `<div class="group-row"><span class="amount credit">${fmt(t.absoluteAmount)}</span> ${esc(t.counterpartName)}</div>`).join('');
+      const debits = g.debits.map(t => `<div class="group-row"><span class="amount debit">${fmt(-t.absoluteAmount)}</span> ${esc(txLabel(t))}</div>`).join('');
+      const credits = g.credits.map(t => `<div class="group-row"><span class="amount credit">${fmt(t.absoluteAmount)}</span> ${esc(txLabel(t))}</div>`).join('');
       return `<div class="manual-group"><div class="group-header"><span>Group ${i+1}</span><button class="btn btn-danger" onclick="doUnmatch(${i})">Undo</button></div>${debits}${credits}</div>`;
     }).join('');
   } else { manSec.classList.add('hidden'); }
@@ -295,7 +295,7 @@ function txRow(t, type) {
     <td><div class="check ${checked ? 'checked' : ''}">${checked ? '\u2713' : ''}</div></td>
     <td>${t.executionDate.substring(5,10)}</td>
     <td class="amount ${cls}">${sign}${t.absoluteAmount.toFixed(2)}</td>
-    <td>${esc(t.counterpartName)}</td>
+    <td>${esc(txLabel(t))}</td>
     <td><button class="btn-exclude" onclick="event.stopPropagation(); doExclude('${t.id}')" title="Exclude — already settled">\u2716</button></td></tr>`;
 }
 
@@ -388,6 +388,7 @@ async function doReprocess() {
 
 function fmt(n) { return n.toFixed(2); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function txLabel(t) { return t.remittanceInformation || t.counterpartName; }
 
 loadData();
 </script>
