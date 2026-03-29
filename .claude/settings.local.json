@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:developer.triodos.com)",
+      "WebFetch(domain:myponto.com)",
+      "WebFetch(domain:documentation.ibanity.com)",
+      "WebFetch(domain:documentation.myponto.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(dotnet new:*)",
+      "Bash(cd:*)",
+      "Bash(dotnet sln:*)",
+      "Bash(dotnet add:*)",
+      "Bash(dotnet build:*)",
+      "Bash(ls *.sln)",
+      "Bash(dotnet test:*)",
+      "Bash(find /d/claude/triodos -path */Ibanity* -name *.dll)",
+      "Bash(dotnet restore:*)",
+      "Bash(find /d/claude/triodos -path */packages/ibanity* -o -path */.nuget/packages/ibanity*)",
+      "Bash(dotnet script:*)",
+      "Bash(python3 -c \"import zipfile; z=zipfile.ZipFile\\(''/c/Users/raimo/.nuget/packages/ibanity/0.6.7/lib/netstandard2.0/Ibanity.dll''\\); print\\([n for n in z.namelist\\(\\)[:20]]\\)\")",
+      "Bash(ilspycmd /c/Users/raimo/.nuget/packages/ibanity/0.6.7/lib/netstandard2.0/Ibanity.dll)",
+      "Bash(python3:*)",
+      "Bash(grep -B2 -A30 'IbanityCollection`1\\\\.PageLimit' ~/.nuget/packages/ibanity/0.6.7/lib/netstandard2.0/Ibanity.xml)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(grep -E \"\\\\.\\(cs|csproj\\)$\")",
+      "Bash(find /d/claude/triodos -name *plan* -type f)",
+      "Bash(dotnet run:*)",
+      "Bash(echo \"EXIT CODE: $?\")",
+      "Bash(git:*)"
+    ]
+  }
+}

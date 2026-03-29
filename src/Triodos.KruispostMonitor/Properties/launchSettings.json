@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Triodos.KruispostMonitor": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "DOTNET_Environment": "Development"
+      }
+    }
+  }
+}
