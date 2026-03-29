@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Triodos.KruispostMonitor.Configuration;
+using Triodos.KruispostMonitor.State;
 
 namespace Triodos.KruispostMonitor.Services;
 
@@ -10,17 +11,20 @@ public class FileWatcherService : BackgroundService
     private readonly FileWatcherSettings _settings;
     private readonly ProcessingService _processingService;
     private readonly MonitorState _monitorState;
+    private readonly IStateStore _stateStore;
     private readonly ILogger<FileWatcherService> _logger;
 
     public FileWatcherService(
         IOptions<FileWatcherSettings> settings,
         ProcessingService processingService,
         MonitorState monitorState,
+        IStateStore stateStore,
         ILogger<FileWatcherService> logger)
     {
         _settings = settings.Value;
         _processingService = processingService;
         _monitorState = monitorState;
+        _stateStore = stateStore;
         _logger = logger;
     }
 
@@ -30,7 +34,10 @@ public class FileWatcherService : BackgroundService
         Directory.CreateDirectory(_settings.WatchPath);
         Directory.CreateDirectory(_settings.ProcessedPath);
 
-        // Process any existing files on startup
+        // Restore dashboard state from last processed file
+        await RestoreLastProcessedFileAsync();
+
+        // Process any new files in the watch folder
         await ProcessExistingFilesAsync();
 
         _logger.LogInformation("Watching for MT940 files in {Path}", _settings.WatchPath);
@@ -71,6 +78,33 @@ public class FileWatcherService : BackgroundService
         }
 
         _monitorState.IsWatching = false;
+    }
+
+    private async Task RestoreLastProcessedFileAsync()
+    {
+        try
+        {
+            var state = await _stateStore.LoadAsync();
+            _monitorState.RestoreHistory(state);
+
+            if (state.LastProcessedFile is not null)
+            {
+                var filePath = Path.Combine(_settings.ProcessedPath, state.LastProcessedFile);
+                if (File.Exists(filePath))
+                {
+                    await _processingService.ReloadFileAsync(filePath);
+                    _logger.LogInformation("Restored dashboard state from {File}", state.LastProcessedFile);
+                }
+                else
+                {
+                    _logger.LogWarning("Last processed file {File} not found in processed folder", state.LastProcessedFile);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not restore previous state, starting fresh");
+        }
     }
 
     private async Task ProcessExistingFilesAsync()

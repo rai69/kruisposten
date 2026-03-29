@@ -37,17 +37,26 @@ public class ProcessingService
     public async Task ProcessFileAsync(string filePath)
     {
         _logger.LogInformation("Processing MT940 file: {FilePath}", filePath);
+        var sourceResult = ParseMt940File(filePath);
+        await ProcessAsync(sourceResult, Path.GetFileName(filePath));
+    }
 
-        var content = await File.ReadAllTextAsync(filePath);
+    public async Task ReloadFileAsync(string filePath)
+    {
+        _logger.LogInformation("Reloading MT940 file for dashboard: {FilePath}", filePath);
+        var sourceResult = ParseMt940File(filePath);
+        await ReloadAsync(sourceResult, Path.GetFileName(filePath));
+    }
+
+    private static TransactionSourceResult ParseMt940File(string filePath)
+    {
+        var content = File.ReadAllText(filePath);
         var statement = Mt940Parser.Parse(content);
-
-        var sourceResult = new TransactionSourceResult(
+        return new TransactionSourceResult(
             statement.Transactions,
             statement.ClosingBalance,
             statement.Currency,
             statement.AccountIdentification);
-
-        await ProcessAsync(sourceResult, Path.GetFileName(filePath));
     }
 
     public async Task ProcessAsync(TransactionSourceResult sourceResult, string sourceName)
@@ -95,6 +104,34 @@ public class ProcessingService
 
         // Send notifications
         await SendNotificationsAsync(matchResult, sourceResult.CurrentBalance, sourceResult.Currency);
+    }
+
+    public async Task ReloadAsync(TransactionSourceResult sourceResult, string sourceName)
+    {
+        _logger.LogInformation("Reloading dashboard state (no notifications)");
+
+        var state = await _stateStore.LoadAsync();
+
+        var excludedIds = new HashSet<string>(state.MatchedTransactionIds);
+        foreach (var mm in state.ManualMatches)
+        {
+            foreach (var id in mm.DebitIds) excludedIds.Add(id);
+            foreach (var id in mm.CreditIds) excludedIds.Add(id);
+        }
+        excludedIds.UnionWith(state.ExcludedTransactionIds);
+
+        var matcher = new TransactionMatcher(_matchingSettings);
+        var matchResult = matcher.Match(sourceResult.Transactions, excludedIds);
+
+        _monitorState.UpdateFromProcessing(
+            matchResult,
+            sourceResult.Transactions,
+            sourceResult.CurrentBalance,
+            sourceResult.Currency,
+            sourceResult.AccountIdentifier,
+            state,
+            sourceName,
+            skipHistory: true);
     }
 
     private async Task SendNotificationsAsync(MatchResult matchResult, decimal currentBalance, string currency)

@@ -30,6 +30,16 @@ public class MonitorState
     public List<TransactionRecord> UnmatchedDebits { get; private set; } = [];
     public List<TransactionRecord> UnmatchedCredits { get; private set; } = [];
 
+    public void RestoreHistory(RunState state)
+    {
+        lock (_lock)
+        {
+            State = state;
+            History = state.History ?? [];
+            LastProcessedFile = state.LastProcessedFile;
+        }
+    }
+
     public void UpdateFromProcessing(
         MatchResult matchResult,
         List<TransactionRecord> allTransactions,
@@ -37,7 +47,8 @@ public class MonitorState
         string currency,
         string accountIdentifier,
         RunState state,
-        string fileName)
+        string fileName,
+        bool skipHistory = false)
     {
         lock (_lock)
         {
@@ -52,17 +63,24 @@ public class MonitorState
             UnmatchedDebits = new List<TransactionRecord>(matchResult.UnmatchedDebits);
             UnmatchedCredits = new List<TransactionRecord>(matchResult.UnmatchedCredits);
 
-            History.Insert(0, new ProcessingRun(
-                DateTimeOffset.UtcNow,
-                Path.GetFileName(fileName),
-                allTransactions.Count,
-                matchResult.Matched.Count,
-                matchResult.UnmatchedDebits.Count,
-                matchResult.UnmatchedCredits.Count));
+            if (!skipHistory)
+            {
+                History.Insert(0, new ProcessingRun(
+                    DateTimeOffset.UtcNow,
+                    Path.GetFileName(fileName),
+                    allTransactions.Count,
+                    matchResult.Matched.Count,
+                    matchResult.UnmatchedDebits.Count,
+                    matchResult.UnmatchedCredits.Count));
 
-            // Keep last 50 runs
-            if (History.Count > 50)
-                History.RemoveRange(50, History.Count - 50);
+                // Keep last 50 runs
+                if (History.Count > 50)
+                    History.RemoveRange(50, History.Count - 50);
+            }
+
+            // Persist to state
+            state.LastProcessedFile = LastProcessedFile;
+            state.History = History;
         }
     }
 
