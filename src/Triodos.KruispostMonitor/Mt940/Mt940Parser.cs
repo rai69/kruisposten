@@ -240,28 +240,114 @@ public static class Mt940Parser
         if (string.IsNullOrWhiteSpace(details))
             return (string.Empty, string.Empty);
 
-        // Check for /REMI/ tag first (standard MT940)
-        var remiIndex = details.IndexOf("/REMI/", StringComparison.OrdinalIgnoreCase);
-        if (remiIndex >= 0)
+        // Structured MT940 format: /TAG/value/TAG/value/...
+        if (details.StartsWith('/'))
+            return ParseStructuredDetails(details);
+
+        // Triodos >XX subfield format (legacy unstructured)
+        if (details.Contains('>'))
+            return ParseTriodosSubfields(details, txType);
+
+        // Plain text fallback
+        return (details, string.Empty);
+    }
+
+    private static (string counterpartName, string remittanceInfo) ParseStructuredDetails(string details)
+    {
+        var tags = ParseSwiftTags(details);
+
+        // Extract counterpart name from /CNTP/ tag: IBAN/BIC/Name///
+        var counterpartName = string.Empty;
+        var iban = string.Empty;
+        if (tags.TryGetValue("CNTP", out var cntp))
         {
-            var remi = details[(remiIndex + 6)..].Trim();
-            var name = details[..remiIndex].Split('\n')[0].Trim();
-            return (name, remi);
+            var parts = cntp.Split('/');
+            if (parts.Length >= 3)
+            {
+                iban = parts[0].Trim();
+                counterpartName = parts[2].Trim();
+            }
         }
 
-        // Parse Triodos >XX subfield format
+        // Extract remittance from /REMI/ tag: USTD//description/
+        var remittance = string.Empty;
+        if (tags.TryGetValue("REMI", out var remi))
+        {
+            // Format: USTD//actual description
+            var ustdIdx = remi.IndexOf("USTD//", StringComparison.Ordinal);
+            if (ustdIdx >= 0)
+                remittance = remi[(ustdIdx + 6)..].TrimEnd('/').Trim();
+            else
+                remittance = remi.Trim();
+        }
+
+        // For card payments (no /CNTP/), extract merchant from remittance
+        if (string.IsNullOrEmpty(counterpartName) && !string.IsNullOrEmpty(remittance))
+        {
+            var termIdx = remittance.IndexOf(" - Terminal", StringComparison.OrdinalIgnoreCase);
+            if (termIdx > 0)
+                counterpartName = remittance[..termIdx].Trim();
+            else
+                counterpartName = remittance;
+        }
+
+        // If we have IBAN but no name, use IBAN as counterpart
+        if (string.IsNullOrEmpty(counterpartName) && !string.IsNullOrEmpty(iban))
+            counterpartName = iban;
+
+        return (counterpartName, remittance);
+    }
+
+    private static readonly HashSet<string> KnownSwiftTags =
+        ["CNTP", "REMI", "EREF", "MREF", "PREF", "IREF", "PURP", "ULTC", "ULTD"];
+
+    private static Dictionary<string, string> ParseSwiftTags(string details)
+    {
+        // Parse /TAG/value/ format used in structured MT940
+        // Known tags: CNTP, REMI, EREF, MREF, etc.
+        // Values can contain slashes (e.g. /CNTP/IBAN/BIC/Name///)
+        var tags = new Dictionary<string, string>();
+
+        // Find all known tag positions
+        var tagPositions = new List<(int pos, string tag)>();
+        for (var i = 0; i < details.Length - 2; i++)
+        {
+            if (details[i] != '/') continue;
+
+            var slashEnd = details.IndexOf('/', i + 1);
+            if (slashEnd < 0) continue;
+
+            var candidate = details[(i + 1)..slashEnd];
+            if (KnownSwiftTags.Contains(candidate))
+            {
+                tagPositions.Add((i, candidate));
+                i = slashEnd; // skip past this tag
+            }
+        }
+
+        // Extract values between tag positions
+        for (var i = 0; i < tagPositions.Count; i++)
+        {
+            var valueStart = tagPositions[i].pos + tagPositions[i].tag.Length + 2; // skip /TAG/
+            var valueEnd = i + 1 < tagPositions.Count
+                ? tagPositions[i + 1].pos
+                : details.Length;
+
+            tags[tagPositions[i].tag] = details[valueStart..valueEnd];
+        }
+
+        return tags;
+    }
+
+    private static (string counterpartName, string remittanceInfo) ParseTriodosSubfields(string details, string txType)
+    {
         var fields = ParseSubfields(details);
 
         if (!fields.ContainsKey("20"))
             return (details, string.Empty);
 
-        // For transfers (NET, NID): >20=BIC, >21=IBAN, >22-24=name+description
-        // For card payments (NBA): >20-24=merchant+terminal info
-        // For bank costs (NKN): >20-24=description
-
         if (txType is "NET" or "NID")
         {
-            // Combine >22 through >24 for counterpart name + description
             var narrative = string.Concat(
                 fields.GetValueOrDefault("22", ""),
                 fields.GetValueOrDefault("23", ""),
@@ -275,7 +361,6 @@ public static class Mt940Parser
         }
         else
         {
-            // Card payments and other: >20-24 is the full description
             var narrative = string.Concat(
                 fields.GetValueOrDefault("20", ""),
                 fields.GetValueOrDefault("21", ""),
@@ -283,7 +368,6 @@ public static class Mt940Parser
                 fields.GetValueOrDefault("23", ""),
                 fields.GetValueOrDefault("24", "")).Trim();
 
-            // Try to extract merchant name (before " - TERMINAL" or " - ")
             var termIdx = narrative.IndexOf(" - TERMINAL", StringComparison.OrdinalIgnoreCase);
             if (termIdx > 0)
                 return (narrative[..termIdx].Trim(), narrative);

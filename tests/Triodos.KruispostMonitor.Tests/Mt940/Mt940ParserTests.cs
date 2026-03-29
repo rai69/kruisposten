@@ -11,14 +11,11 @@ public class Mt940ParserTests
         :28C:00001
         :60F:C260325EUR1234,56
         :61:2603250325D100,00NTRFNONREF//PREF
-        :86:Counterpart A
-        /REMI/Payment for invoice 001
+        :86:/CNTP/NL11TRIO1234567890/TRIONL2U/Counterpart A///REMI/USTD//Payment for invoice 001/
         :61:2603250325C100,00NTRFNONREF//PREF
-        :86:Counterpart B
-        /REMI/Chargeback invoice 001
+        :86:/CNTP/NL22TRIO9876543210/TRIONL2U/Counterpart B///REMI/USTD//Chargeback invoice 001/
         :61:2603260326D50,50NTRFNONREF//PREF
-        :86:Counterpart C
-        /REMI/Payment for invoice 002
+        :86:/CNTP/NL33TRIO5555555555/TRIONL2U/Counterpart C///REMI/USTD//Payment for invoice 002/
         :62F:C1184,06EUR
         """;
 
@@ -206,5 +203,51 @@ public class Mt940ParserTests
         transfer.CounterpartName.Should().Contain("BOL.COM");
         transfer.RemittanceInformation.Should().Contain("NL27INGB0000026500");
         transfer.Amount.Should().Be(-35.90m);
+    }
+
+    // --- Structured MT940 format tests ---
+
+    private const string StructuredStatement = """
+        :20:1774773974315
+        :25:NL55TRIO0338505768
+        :28C:1
+        :60F:C260201EUR257,54
+        :61:260201D37,90NBA0NONREF
+        :86:/REMI/USTD//Rituals - Enschede - Terminal 05683709 - 31-01-2026 12:25 - PASNR.  1991 - CONTACTLOOS - Apple Pay/
+        :61:260201C37,90NET0NONREF
+        :86:/CNTP/NL50TRIO2300470829/TRIONL2U/R.F.B. Kuipers en of I.///REMI/USTD//Rituals kado Inia/
+        :61:260203D144,46NID0NONREF
+        :86:/CNTP/NL04ADYB2017400157/ADYBNL2A/Wehkamp///EREF/02-02-26 20:40 7180665058869563//REMI/USTD//J6J57CLLJX8Q48G32U74B wehkamp: 969567de/
+        :62F:C260201EUR257,54
+        """;
+
+    [Fact]
+    public void Parse_StructuredCardPayment_ExtractsMerchantName()
+    {
+        var result = Mt940Parser.Parse(StructuredStatement);
+        var card = result.Transactions[0];
+        card.CounterpartName.Should().Be("Rituals - Enschede");
+        card.RemittanceInformation.Should().Contain("Rituals");
+        card.Amount.Should().Be(-37.90m);
+    }
+
+    [Fact]
+    public void Parse_StructuredTransfer_ExtractsCounterpartAndRemittance()
+    {
+        var result = Mt940Parser.Parse(StructuredStatement);
+        var transfer = result.Transactions[1];
+        transfer.CounterpartName.Should().Contain("Kuipers");
+        transfer.RemittanceInformation.Should().Contain("Rituals kado Inia");
+        transfer.Amount.Should().Be(37.90m);
+    }
+
+    [Fact]
+    public void Parse_StructuredIdeal_ExtractsCounterpartAndRemittance()
+    {
+        var result = Mt940Parser.Parse(StructuredStatement);
+        var ideal = result.Transactions[2];
+        ideal.CounterpartName.Should().Be("Wehkamp");
+        ideal.RemittanceInformation.Should().Contain("wehkamp");
+        ideal.Amount.Should().Be(-144.46m);
     }
 }

@@ -143,7 +143,7 @@ public class FileWatcherService : BackgroundService
 
     private static bool IsMatchingFile(string path)
     {
-        var ext = Path.GetExtension(path).ToLowerInvariant();
-        return ext is ".mt940" or ".sta";
+        var name = Path.GetFileName(path).ToLowerInvariant();
+        return name.EndsWith(".mt940") || name.EndsWith(".mt940structured") || name.EndsWith(".sta");
     }
 }
