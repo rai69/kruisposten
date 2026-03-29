@@ -97,6 +97,20 @@ app.MapPost("/api/unmatch", async (HttpContext ctx, MonitorState monitor) =>
     return Results.BadRequest(error);
 });
 
+// API — undo auto-matched pair
+app.MapPost("/api/unmatch-auto", async (HttpContext ctx, MonitorState monitor, IStateStore stateStore) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<UnmatchRequest>(ctx.Request.Body, jsonOptions);
+    if (body is null) return Results.BadRequest("Invalid request");
+
+    if (monitor.TryUnmatchAutoMatched(body.Index, out var error))
+    {
+        await stateStore.SaveAsync(monitor.State);
+        return Results.Ok();
+    }
+    return Results.BadRequest(error);
+});
+
 // API — exclude transaction (already settled)
 app.MapPost("/api/exclude", async (HttpContext ctx, MonitorState monitor, IStateStore stateStore) =>
 {

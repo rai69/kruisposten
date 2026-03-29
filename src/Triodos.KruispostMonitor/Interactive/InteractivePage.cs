@@ -252,11 +252,12 @@ function render() {
     autoSec.classList.remove('hidden');
     document.getElementById('auto-count').textContent = data.autoMatched.length;
     const show = autoExpanded ? data.autoMatched : data.autoMatched.slice(0, 3);
-    document.getElementById('auto-list').innerHTML = show.map(m => `
+    document.getElementById('auto-list').innerHTML = show.map((m, i) => `
       <div class="auto-row">
         <div class="side"><span class="amount debit">${fmt(-m.debit.absoluteAmount)}</span> ${esc(txLabel(m.debit))}</div>
         <span class="arrow">\u27F7</span>
         <div class="side"><span class="amount credit">${fmt(m.credit.absoluteAmount)}</span> ${esc(txLabel(m.credit))}</div>
+        <button class="btn-exclude" onclick="doUnmatchAuto(${i})" title="Unmatch this pair">\u21C4</button>
       </div>`).join('');
     const toggle = document.getElementById('auto-toggle');
     if (data.autoMatched.length > 3) {
@@ -356,6 +357,14 @@ async function doMatch() {
 async function doUnmatch(index) {
   isLoading = true;
   const resp = await fetch('/api/unmatch', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ index }) });
+  isLoading = false;
+  if (resp.ok) { await loadData(); }
+  else { alert('Unmatch failed: ' + await resp.text()); }
+}
+
+async function doUnmatchAuto(index) {
+  isLoading = true;
+  const resp = await fetch('/api/unmatch-auto', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ index }) });
   isLoading = false;
   if (resp.ok) { await loadData(); }
   else { alert('Unmatch failed: ' + await resp.text()); }

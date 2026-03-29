@@ -134,6 +134,42 @@ public class MonitorState
         }
     }
 
+    public bool TryUnmatchAutoMatched(int index, out string? error)
+    {
+        lock (_lock)
+        {
+            if (CurrentMatchResult is null || index < 0 || index >= CurrentMatchResult.Matched.Count)
+            {
+                error = "Invalid match index";
+                return false;
+            }
+
+            var pair = CurrentMatchResult.Matched[index];
+
+            // Remove from auto-matched
+            var newMatched = CurrentMatchResult.Matched.ToList();
+            newMatched.RemoveAt(index);
+            CurrentMatchResult = new MatchResult
+            {
+                Matched = newMatched,
+                UnmatchedDebits = CurrentMatchResult.UnmatchedDebits,
+                UnmatchedCredits = CurrentMatchResult.UnmatchedCredits,
+                PossibleMatches = CurrentMatchResult.PossibleMatches
+            };
+
+            // Add back to unmatched
+            UnmatchedDebits.Add(pair.Debit);
+            UnmatchedCredits.Add(pair.Credit);
+
+            // Remove from state's matched IDs so they won't be auto-excluded next run
+            State.MatchedTransactionIds.Remove(pair.Debit.Id);
+            State.MatchedTransactionIds.Remove(pair.Credit.Id);
+
+            error = null;
+            return true;
+        }
+    }
+
     public void SaveManualMatches()
     {
         lock (_lock)
