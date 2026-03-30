@@ -51,7 +51,7 @@ public class TransactionMatcherTests
     }
 
     [Fact]
-    public void Match_SameAmountDifferentReference_MatchesOnAmountAlone()
+    public void Match_SameAmountNoSharedWords_DoesNotMatch()
     {
         var transactions = new List<TransactionRecord>
         {
@@ -61,18 +61,19 @@ public class TransactionMatcherTests
 
         var result = new TransactionMatcher(_settings).Match(transactions, []);
 
-        // Amount match alone is sufficient at default threshold
-        result.Matched.Should().HaveCount(1);
+        // No shared words → no match
+        result.Matched.Should().BeEmpty();
+        result.UnmatchedDebits.Should().HaveCount(1);
     }
 
     [Fact]
     public void Match_HighThreshold_RequiresTextSimilarity()
     {
-        var settings = new MatchingSettings { SimilarityThreshold = 0.8, TargetBalance = 300m };
+        var settings = new MatchingSettings { SimilarityThreshold = 0.9, TargetBalance = 300m };
         var transactions = new List<TransactionRecord>
         {
-            Debit("d1", 35.00m, "Albert Heijn", "Boodschappen"),
-            Credit("c1", 35.00m, "Hypotheek Bank", "Maandelijkse afschrijving")
+            Debit("d1", 35.00m, "Albert Heijn Enschede", "Boodschappen week zestien maart"),
+            Credit("c1", 35.00m, "Kuipers betaalrekening", "Albert Heijn pinbetaling dinsdag")
         };
 
         var result = new TransactionMatcher(settings).Match(transactions, []);
@@ -115,13 +116,13 @@ public class TransactionMatcherTests
     }
 
     [Fact]
-    public void Match_PossibleMatch_WhenAmountMatchesButHighThreshold()
+    public void Match_PossibleMatch_WhenSharedWordButHighThreshold()
     {
         var settings = new MatchingSettings { SimilarityThreshold = 0.9, TargetBalance = 300m };
         var transactions = new List<TransactionRecord>
         {
             Debit("d1", 50.00m, "Bol.com", "Bestelling 12345"),
-            Credit("c1", 50.00m, "Retour afdeling", "Terugbetaling order")
+            Credit("c1", 50.00m, "Retour Bol.com", "Terugbetaling bestelling")
         };
 
         var result = new TransactionMatcher(settings).Match(transactions, []);

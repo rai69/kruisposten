@@ -82,7 +82,22 @@ public static class InteractivePage
   .waiting-msg .sub { font-size: 13px; color: #999; }
   .history-table td { font-size: 12px; }
   .collapsible-toggle { cursor: pointer; color: #1976d2; font-size: 13px; margin-top: 8px; display: inline-block; }
-  .hidden { display: none; }
+  .hidden { display: none !important; }
+  .score-badge { font-size: 11px; padding: 2px 6px; border-radius: 8px; font-weight: 600; white-space: nowrap; margin: 0 4px; }
+  .score-badge.score-high { background: #c8e6c9; color: #2e7d32; }
+  .score-badge.score-med { background: #fff3e0; color: #e65100; }
+  .score-badge.score-low { background: #ffcdd2; color: #c62828; }
+  .auto-row.score-low { background: #fff8f8; }
+  .auto-row.score-med { background: #fffcf5; }
+  .db-actions { display: flex; gap: 10px; align-items: center; }
+  .tx-table { max-height: 500px; overflow-y: auto; }
+  .tx-table table { font-size: 12px; }
+  .tx-filter { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; width: 300px; margin-bottom: 10px; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; }
+  .modal { background: white; border-radius: 8px; padding: 20px; max-width: 600px; width: 90%; text-align: center; }
+  .modal h3 { margin-bottom: 12px; }
+  .modal p { margin-bottom: 16px; color: #666; font-size: 14px; }
+  .modal .btn { margin: 0 6px; }
 </style>
 </head>
 <body>
@@ -101,6 +116,7 @@ public static class InteractivePage
   <div class="waiting-msg">
     <p>Waiting for MT940 file...</p>
     <p class="sub">Drop a file in the import folder.</p>
+    <p style="margin-top:20px"><button class="btn btn-danger" style="font-size:13px;padding:6px 14px" onclick="confirmReinitDb()">Re-init database</button></p>
   </div>
 </div>
 
@@ -123,6 +139,11 @@ public static class InteractivePage
   <div class="toggle" id="auto-toggle" onclick="toggleAuto()"></div>
 </div>
 
+<div id="split-section" class="section hidden">
+  <h2>Split matches <span class="badge green" id="split-count"></span></h2>
+  <div id="split-list"></div>
+</div>
+
 <div id="manual-section" class="section hidden">
   <h2>Manual matches <span class="badge purple" id="manual-count"></span></h2>
   <div id="manual-list"></div>
@@ -130,18 +151,84 @@ public static class InteractivePage
 
 <div class="two-col" id="unmatched-area">
   <div class="section">
-    <h2>Unmatched debits <span class="badge red" id="debit-count"></span></h2>
+    <h2>Unmatched debits <span class="badge red" id="debit-count"></span> <span class="amount debit" style="font-size:13px;font-weight:normal;margin-left:8px">-<span id="debit-total">0.00</span></span></h2>
+    <input type="text" class="tx-filter" id="debit-filter" placeholder="Filter debits..." oninput="render()">
     <table><thead><tr><th style="width:30px"></th><th>Date</th><th>Amount</th><th>Description</th><th style="width:40px"></th></tr></thead>
     <tbody id="debit-list"></tbody></table>
   </div>
   <div class="section">
-    <h2>Unmatched credits <span class="badge blue" id="credit-count"></span></h2>
+    <h2>Unmatched credits <span class="badge blue" id="credit-count"></span> <span class="amount credit" style="font-size:13px;font-weight:normal;margin-left:8px">+<span id="credit-total">0.00</span></span></h2>
+    <input type="text" class="tx-filter" id="credit-filter" placeholder="Filter credits..." oninput="render()">
     <table><thead><tr><th style="width:30px"></th><th>Date</th><th>Amount</th><th>Description</th><th style="width:40px"></th></tr></thead>
     <tbody id="credit-list"></tbody></table>
   </div>
 </div>
 
+<div id="matched-history-section" class="section">
+  <h2>Matched history <span class="badge green" id="matched-history-count"></span>
+    <div style="flex:1"></div>
+    <button class="btn btn-secondary" onclick="loadMatchedHistory()">Load matched pairs</button>
+  </h2>
+  <div id="matched-history-content" class="hidden">
+    <input type="text" class="tx-filter" id="matched-history-filter" placeholder="Filter matched pairs..." oninput="filterMatchedHistory()">
+    <div id="matched-history-list"></div>
+  </div>
+</div>
+
+<div id="saved-manual-section" class="section">
+  <h2>Saved manual matches <span class="badge purple" id="saved-manual-count"></span>
+    <div style="flex:1"></div>
+    <button class="btn btn-secondary" onclick="loadSavedManualMatches()">Load manual matches</button>
+  </h2>
+  <div id="saved-manual-content" class="hidden">
+    <div id="saved-manual-list"></div>
+  </div>
+</div>
+
+<div id="excluded-section" class="section">
+  <h2>Excluded transactions <span class="badge" id="excluded-count"></span>
+    <div style="flex:1"></div>
+    <button class="btn btn-secondary" onclick="loadExcluded()">Load excluded</button>
+  </h2>
+  <div id="excluded-content" class="hidden">
+    <div class="tx-table">
+      <table>
+        <thead><tr><th>Date</th><th>Amount</th><th>Description</th><th style="width:40px"></th></tr></thead>
+        <tbody id="excluded-list"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="all-tx-section" class="section">
+  <h2>All transactions <span class="badge" id="all-tx-count"></span>
+    <div style="flex:1"></div>
+    <div class="db-actions">
+      <button class="btn btn-secondary" onclick="loadAllTransactions()">Load transactions</button>
+      <button class="btn btn-danger" style="font-size:13px;padding:6px 14px" onclick="confirmReinitDb()">Re-init database</button>
+    </div>
+  </h2>
+  <div id="all-tx-content" class="hidden">
+    <input type="text" class="tx-filter" id="tx-filter" placeholder="Filter transactions..." oninput="filterTransactions()">
+    <div class="tx-table">
+      <table>
+        <thead><tr><th>Date</th><th>Amount</th><th>Type</th><th>Counterpart</th><th>Remittance info</th><th style="width:40px"></th></tr></thead>
+        <tbody id="all-tx-list"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 </div><!-- #main-content -->
+
+<div id="reinit-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeReinitModal()">
+  <div class="modal">
+    <h3>Re-initialize database?</h3>
+    <p>This will delete all transactions, matches, history and state. This cannot be undone.</p>
+    <button class="btn btn-danger" style="font-size:14px;padding:8px 20px;background:#c62828;color:white" onclick="doReinitDb()">Yes, reset everything</button>
+    <button class="btn btn-secondary" onclick="closeReinitModal()">Cancel</button>
+  </div>
+</div>
 
 <div class="match-panel" id="panel">
   <div class="sel-info">
@@ -175,6 +262,7 @@ async function loadData() {
   if (json.ready === false) {
     document.getElementById('waiting-area').classList.remove('hidden');
     document.getElementById('main-content').classList.add('hidden');
+    document.getElementById('panel').classList.add('hidden');
     document.getElementById('subtitle').textContent = '';
     updateStatusBar(json);
     setTimeout(loadData, 5000);
@@ -183,6 +271,7 @@ async function loadData() {
 
   document.getElementById('waiting-area').classList.add('hidden');
   document.getElementById('main-content').classList.remove('hidden');
+  document.getElementById('panel').classList.remove('hidden');
 
   data = json;
   updateStatusBar(data);
@@ -217,6 +306,7 @@ function render() {
   // Summary
   document.getElementById('summary').innerHTML = `
     <div class="summary-card green"><div class="value">${data.autoMatched.length}</div><div class="label">Auto-matched</div></div>
+    <div class="summary-card ${(data.splitMatches||[]).length > 0 ? 'green' : ''}"><div class="value">${(data.splitMatches||[]).length}</div><div class="label">Split matches</div></div>
     <div class="summary-card ${data.manualMatches.length > 0 ? 'purple' : ''}"><div class="value">${data.manualMatches.length}</div><div class="label">Manual matches</div></div>
     <div class="summary-card red"><div class="value">${data.unmatchedDebits.length}</div><div class="label">Unmatched debits</div></div>
     <div class="summary-card blue"><div class="value">${data.unmatchedCredits.length}</div><div class="label">Unmatched credits</div></div>
@@ -252,19 +342,33 @@ function render() {
     autoSec.classList.remove('hidden');
     document.getElementById('auto-count').textContent = data.autoMatched.length;
     const show = autoExpanded ? data.autoMatched : data.autoMatched.slice(0, 3);
-    document.getElementById('auto-list').innerHTML = show.map((m, i) => `
-      <div class="auto-row">
+    document.getElementById('auto-list').innerHTML = show.map((m, i) => {
+      const scoreClass = m.score >= 90 ? 'score-high' : m.score >= 75 ? 'score-med' : 'score-low';
+      return `<div class="auto-row ${scoreClass}">
         <div class="side"><span class="amount debit">${fmt(-m.debit.absoluteAmount)}</span> ${esc(txLabel(m.debit))}</div>
         <span class="arrow">\u27F7</span>
         <div class="side"><span class="amount credit">${fmt(m.credit.absoluteAmount)}</span> ${esc(txLabel(m.credit))}</div>
+        <span class="score-badge ${scoreClass}">${m.score}%</span>
         <button class="btn-exclude" onclick="doUnmatchAuto(${i})" title="Unmatch this pair">\u21C4</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
     const toggle = document.getElementById('auto-toggle');
     if (data.autoMatched.length > 3) {
       toggle.classList.remove('hidden');
       toggle.textContent = autoExpanded ? '\u25BE Hide' : `\u25B8 Show ${data.autoMatched.length - 3} more...`;
     } else { toggle.classList.add('hidden'); }
   } else { autoSec.classList.add('hidden'); }
+
+  // Split matches
+  const splitSec = document.getElementById('split-section');
+  if (data.splitMatches && data.splitMatches.length > 0) {
+    splitSec.classList.remove('hidden');
+    document.getElementById('split-count').textContent = data.splitMatches.length;
+    document.getElementById('split-list').innerHTML = data.splitMatches.map(s => {
+      const debits = s.debits.map(t => `<div class="group-row"><span class="amount debit">${fmt(-t.absoluteAmount)}</span> ${esc(txLabel(t))}</div>`).join('');
+      return `<div class="manual-group" style="border-color:#c8e6c9"><div class="group-header"><span style="color:#2e7d32">Split: <span class="amount credit">${fmt(s.credit.absoluteAmount)}</span> ${esc(txLabel(s.credit))}</span></div>${debits}</div>`;
+    }).join('');
+  } else { splitSec.classList.add('hidden'); }
 
   // Manual matches
   const manSec = document.getElementById('manual-section');
@@ -279,10 +383,22 @@ function render() {
   } else { manSec.classList.add('hidden'); }
 
   // Unmatched
+  const debitFilter = (document.getElementById('debit-filter').value || '').toLowerCase();
+  const creditFilter = (document.getElementById('credit-filter').value || '').toLowerCase();
+  const filteredDebits = debitFilter
+    ? data.unmatchedDebits.filter(t => matchesFilter(t, debitFilter))
+    : data.unmatchedDebits;
+  const filteredCredits = creditFilter
+    ? data.unmatchedCredits.filter(t => matchesFilter(t, creditFilter))
+    : data.unmatchedCredits;
+  const debitTotal = data.unmatchedDebits.reduce((s, t) => s + t.absoluteAmount, 0);
+  const creditTotal = data.unmatchedCredits.reduce((s, t) => s + t.absoluteAmount, 0);
   document.getElementById('debit-count').textContent = data.unmatchedDebits.length;
-  document.getElementById('debit-list').innerHTML = data.unmatchedDebits.map(t => txRow(t, 'debit')).join('');
+  document.getElementById('debit-total').textContent = fmt(debitTotal);
+  document.getElementById('debit-list').innerHTML = filteredDebits.map(t => txRow(t, 'debit')).join('');
   document.getElementById('credit-count').textContent = data.unmatchedCredits.length;
-  document.getElementById('credit-list').innerHTML = data.unmatchedCredits.map(t => txRow(t, 'credit')).join('');
+  document.getElementById('credit-total').textContent = fmt(creditTotal);
+  document.getElementById('credit-list').innerHTML = filteredCredits.map(t => txRow(t, 'credit')).join('');
 
   updatePanel();
 }
@@ -393,6 +509,155 @@ async function doReprocess() {
   isLoading = false;
   if (resp.ok) { await loadData(); }
   else { alert('Reprocess failed: ' + await resp.text()); }
+}
+
+let allTransactions = null;
+
+async function loadAllTransactions() {
+  const resp = await fetch('/api/transactions');
+  allTransactions = await resp.json();
+  document.getElementById('all-tx-count').textContent = allTransactions.length;
+  document.getElementById('all-tx-content').classList.remove('hidden');
+  document.getElementById('tx-filter').value = '';
+  renderTransactions(allTransactions);
+}
+
+function filterTransactions() {
+  if (!allTransactions) return;
+  const q = document.getElementById('tx-filter').value.toLowerCase();
+  const filtered = q ? allTransactions.filter(t =>
+    t.counterpartName.toLowerCase().includes(q) ||
+    t.remittanceInformation.toLowerCase().includes(q) ||
+    t.executionDate.includes(q) ||
+    t.amount.toFixed(2).includes(q)
+  ) : allTransactions;
+  renderTransactions(filtered);
+}
+
+function renderTransactions(txs) {
+  document.getElementById('all-tx-list').innerHTML = txs.map(t => {
+    const cls = t.amount < 0 ? 'debit' : 'credit';
+    const sign = t.amount < 0 ? '' : '+';
+    return `<tr>
+      <td>${t.executionDate}</td>
+      <td class="amount ${cls}">${sign}${t.amount.toFixed(2)}</td>
+      <td>${esc(t.transactionType)}</td>
+      <td>${esc(t.counterpartName)}</td>
+      <td>${esc(t.remittanceInformation)}</td>
+      <td><button class="btn-exclude" onclick="event.stopPropagation(); doDeleteTransaction('${t.id}')" title="Delete transaction">\u2716</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadExcluded() {
+  const resp = await fetch('/api/excluded');
+  const excluded = await resp.json();
+  document.getElementById('excluded-count').textContent = excluded.length;
+  document.getElementById('excluded-content').classList.remove('hidden');
+  document.getElementById('excluded-list').innerHTML = excluded.map(t => {
+    const cls = t.amount < 0 ? 'debit' : 'credit';
+    const sign = t.amount < 0 ? '' : '+';
+    return `<tr>
+      <td>${t.executionDate}</td>
+      <td class="amount ${cls}">${sign}${t.absoluteAmount.toFixed(2)}</td>
+      <td>${esc(txLabel(t))}</td>
+      <td><button class="btn-exclude" onclick="doUnexclude('${t.id}')" title="Remove exclusion">\u21A9</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function doUnexclude(id) {
+  isLoading = true;
+  const resp = await fetch('/api/unexclude', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+  isLoading = false;
+  if (resp.ok) { await loadExcluded(); await loadData(); }
+  else { alert('Un-exclude failed: ' + await resp.text()); }
+}
+
+async function doDeleteTransaction(id) {
+  if (!confirm('Delete this transaction from the database?')) return;
+  isLoading = true;
+  const resp = await fetch('/api/delete-transaction', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+  isLoading = false;
+  if (resp.ok) { showToast('Transaction deleted', 2000); await loadAllTransactions(); await loadData(); }
+  else { alert('Delete failed: ' + await resp.text()); }
+}
+
+let matchedHistoryPairs = null;
+
+async function loadMatchedHistory() {
+  const resp = await fetch('/api/matched-history');
+  matchedHistoryPairs = await resp.json();
+  document.getElementById('matched-history-count').textContent = matchedHistoryPairs.length;
+  document.getElementById('matched-history-content').classList.remove('hidden');
+  document.getElementById('matched-history-filter').value = '';
+  renderMatchedHistory(matchedHistoryPairs);
+}
+
+function filterMatchedHistory() {
+  if (!matchedHistoryPairs) return;
+  const q = document.getElementById('matched-history-filter').value.toLowerCase();
+  const filtered = q ? matchedHistoryPairs.filter(p =>
+    matchesFilter(p.debit, q) || matchesFilter(p.credit, q)
+  ) : matchedHistoryPairs;
+  renderMatchedHistory(filtered);
+}
+
+function renderMatchedHistory(pairs) {
+  document.getElementById('matched-history-list').innerHTML = pairs.map(m => `
+    <div class="auto-row">
+      <div class="side"><span class="amount debit">${fmt(-m.debit.absoluteAmount)}</span> ${esc(txLabel(m.debit))} <small style="color:#999">${m.debit.executionDate}</small></div>
+      <span class="arrow">\u27F7</span>
+      <div class="side"><span class="amount credit">${fmt(m.credit.absoluteAmount)}</span> ${esc(txLabel(m.credit))} <small style="color:#999">${m.credit.executionDate}</small></div>
+    </div>`).join('');
+}
+
+async function loadSavedManualMatches() {
+  const resp = await fetch('/api/manual-matches');
+  const groups = await resp.json();
+  document.getElementById('saved-manual-count').textContent = groups.length;
+  document.getElementById('saved-manual-content').classList.remove('hidden');
+  document.getElementById('saved-manual-list').innerHTML = groups.length === 0
+    ? '<p style="color:#999;font-size:13px">No saved manual matches</p>'
+    : groups.map((g, i) => {
+      const debits = g.debits.map(t => `<div class="group-row"><span class="amount debit">${fmt(-t.absoluteAmount)}</span> ${esc(txLabel(t))} <small style="color:#999">${t.executionDate}</small></div>`).join('');
+      const credits = g.credits.map(t => `<div class="group-row"><span class="amount credit">${fmt(t.absoluteAmount)}</span> ${esc(txLabel(t))} <small style="color:#999">${t.executionDate}</small></div>`).join('');
+      return `<div class="manual-group"><div class="group-header"><span>Group ${i+1}</span></div>${debits}${credits}</div>`;
+    }).join('');
+}
+
+function confirmReinitDb() {
+  document.getElementById('reinit-modal').classList.remove('hidden');
+}
+
+function closeReinitModal() {
+  document.getElementById('reinit-modal').classList.add('hidden');
+}
+
+async function doReinitDb() {
+  closeReinitModal();
+  isLoading = true;
+  const resp = await fetch('/api/reinit-db', { method: 'POST' });
+  isLoading = false;
+  if (resp.ok) {
+    allTransactions = null;
+    matchedHistoryPairs = null;
+    document.getElementById('all-tx-content').classList.add('hidden');
+    document.getElementById('matched-history-content').classList.add('hidden');
+    document.getElementById('saved-manual-content').classList.add('hidden');
+    document.getElementById('excluded-content').classList.add('hidden');
+    showToast('Database re-initialized', 3000);
+    await loadData();
+  } else {
+    alert('Re-init failed: ' + await resp.text());
+  }
+}
+
+function matchesFilter(t, q) {
+  return (t.counterpartName || '').toLowerCase().includes(q)
+    || (t.remittanceInformation || '').toLowerCase().includes(q)
+    || t.executionDate.includes(q)
+    || t.absoluteAmount.toFixed(2).includes(q);
 }
 
 function fmt(n) { return n.toFixed(2); }

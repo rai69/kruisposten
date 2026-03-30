@@ -17,9 +17,12 @@ public record MatchedPair(TransactionRecord Debit, TransactionRecord Credit, dou
 
 public record PossibleMatch(TransactionRecord Debit, TransactionRecord Credit, double Similarity);
 
+public record SplitMatch(TransactionRecord Credit, List<TransactionRecord> Debits);
+
 public class MatchResult
 {
     public List<MatchedPair> Matched { get; init; } = [];
+    public List<SplitMatch> SplitMatches { get; init; } = [];
     public List<TransactionRecord> UnmatchedDebits { get; init; } = [];
     public List<TransactionRecord> UnmatchedCredits { get; init; } = [];
     public List<PossibleMatch> PossibleMatches { get; init; } = [];

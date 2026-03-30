@@ -14,10 +14,22 @@ public static class Mt940Parser
         var accountId = ExtractTagValue(lines, ":25:")
             ?? throw new FormatException("MT940 statement missing required :25: (account identification) tag");
 
-        var closingBalanceLine = ExtractTagValue(lines, ":62F:")
-            ?? throw new FormatException("MT940 statement missing required :62F: (closing balance) tag");
+        var closingBalanceLine = ExtractTagValue(lines, ":62F:");
 
-        var (closingBalance, currency) = ParseBalanceLine(closingBalanceLine);
+        decimal closingBalance = 0;
+        var currency = "EUR";
+        if (closingBalanceLine is not null && closingBalanceLine.Length >= 4)
+        {
+            try
+            {
+                (closingBalance, currency) = ParseBalanceLine(closingBalanceLine);
+            }
+            catch (FormatException)
+            {
+                // Truncated or corrupted closing balance — continue with 0
+            }
+        }
+
         var transactions = ParseTransactions(lines);
 
         return new Mt940Statement(accountId, closingBalance, currency, transactions);
@@ -85,10 +97,6 @@ public static class Mt940Parser
 
             var transactionLine = trimmed[4..];
             var (date, amount, debitCredit, txType) = ParseTransactionLine(transactionLine);
-
-            // Skip NPO (standing order / budget allocation) transactions
-            if (txType == "NPO")
-                continue;
 
             // Collect :86: information (may span multiple lines)
             var rawDetails = CollectDetails(lines, i + 1);
@@ -173,6 +181,12 @@ public static class Mt940Parser
             {
                 // Continuation lines for :86: don't start with a tag
                 if (trimmed.StartsWith(':') && trimmed.Length > 3 && trimmed[3] == ':')
+                    break;
+                // Also stop if line contains an MT940 tag (corrupted/concatenated data)
+                if (trimmed.Contains(":61:") || trimmed.Contains(":62F:") || trimmed.Contains(":60F:"))
+                    break;
+                // Stop at end-of-statement marker
+                if (trimmed == "-")
                     break;
                 // Join continuation lines without separator (they split mid-word in MT940)
                 sb.Append(trimmed);

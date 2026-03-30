@@ -1,43 +1,17 @@
-using System.Text.Json;
+using Triodos.KruispostMonitor.Matching;
 
 namespace Triodos.KruispostMonitor.State;
 
 public interface IStateStore
 {
+    Task InitializeAsync();
     Task<RunState> LoadAsync();
     Task SaveAsync(RunState state);
-}
-
-public class StateStore : IStateStore
-{
-    private readonly string _filePath;
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true
-    };
-
-    public StateStore(string filePath)
-    {
-        _filePath = filePath;
-    }
-
-    public async Task<RunState> LoadAsync()
-    {
-        if (!File.Exists(_filePath))
-            return new RunState();
-
-        await using var stream = File.OpenRead(_filePath);
-        return await JsonSerializer.DeserializeAsync<RunState>(stream, JsonOptions) ?? new RunState();
-    }
-
-    public async Task SaveAsync(RunState state)
-    {
-        var directory = Path.GetDirectoryName(_filePath);
-        if (!string.IsNullOrEmpty(directory))
-            Directory.CreateDirectory(directory);
-
-        await using var stream = File.Create(_filePath);
-        await JsonSerializer.SerializeAsync(stream, state, JsonOptions);
-    }
+    Task SaveTransactionsAsync(IReadOnlyList<TransactionRecord> transactions, string sourceFile);
+    Task<List<TransactionRecord>> GetAllTransactionsAsync();
+    Task<List<TransactionRecord>> GetMatchedTransactionsAsync();
+    Task<List<TransactionRecord>> GetExcludedTransactionsAsync();
+    Task RemoveExclusionAsync(string transactionId);
+    Task DeleteTransactionAsync(string transactionId);
+    Task ResetDatabaseAsync();
 }

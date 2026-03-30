@@ -23,7 +23,7 @@ builder.Services.Configure<FileWatcherSettings>(builder.Configuration.GetSection
 // Services
 builder.Services.AddSingleton<IPontoService, PontoService>();
 builder.Services.AddSingleton<IStateStore>(sp =>
-    new StateStore(sp.GetRequiredService<IOptions<StateSettings>>().Value.FilePath));
+    new SqliteStateStore(sp.GetRequiredService<IOptions<StateSettings>>().Value.DatabasePath));
 builder.Services.AddHttpClient<SlackNotificationSender>();
 builder.Services.AddSingleton<INotificationSender, SlackNotificationSender>(sp => sp.GetRequiredService<SlackNotificationSender>());
 builder.Services.AddSingleton<INotificationSender, EmailNotificationSender>();
@@ -32,6 +32,10 @@ builder.Services.AddSingleton<ProcessingService>();
 builder.Services.AddHostedService<FileWatcherService>();
 
 var app = builder.Build();
+
+// Initialize database
+var stateStore = app.Services.GetRequiredService<IStateStore>();
+await stateStore.InitializeAsync();
 
 var jsonOptions = new JsonSerializerOptions
 {
@@ -62,7 +66,13 @@ app.MapGet("/api/data", (MonitorState monitor) =>
         autoMatched = monitor.CurrentMatchResult.Matched.Select(m => new
         {
             debit = TxDto(m.Debit),
-            credit = TxDto(m.Credit)
+            credit = TxDto(m.Credit),
+            score = Math.Round(m.Similarity * 100)
+        }),
+        splitMatches = monitor.CurrentMatchResult.SplitMatches.Select(s => new
+        {
+            credit = TxDto(s.Credit),
+            debits = s.Debits.Select(TxDto)
         }),
         manualMatches = monitor.PendingManualMatches.Select((mm, i) =>
         {
@@ -132,6 +142,100 @@ app.MapPost("/api/save-matches", async (MonitorState monitor, IStateStore stateS
     return Results.Ok();
 });
 
+// API — list all transactions in database
+app.MapGet("/api/transactions", async (IStateStore stateStore) =>
+{
+    var transactions = await stateStore.GetAllTransactionsAsync();
+    return Results.Json(transactions.Select(t => new
+    {
+        id = t.Id,
+        amount = t.Amount,
+        absoluteAmount = t.AbsoluteAmount,
+        counterpartName = t.CounterpartName,
+        remittanceInformation = t.RemittanceInformation,
+        executionDate = t.ExecutionDate.ToString("yyyy-MM-dd"),
+        transactionType = t.TransactionType
+    }).OrderByDescending(t => t.executionDate), jsonOptions);
+});
+
+// API — old matched pairs from database
+app.MapGet("/api/matched-history", async (IStateStore stateStore) =>
+{
+    var matched = await stateStore.GetMatchedTransactionsAsync();
+    var debits = matched.Where(t => t.IsDebit).ToList();
+    var credits = matched.Where(t => t.IsCredit).ToList();
+
+    // Pair debits and credits by matching absolute amounts
+    var pairs = new List<object>();
+    var usedCredits = new HashSet<string>();
+    foreach (var debit in debits)
+    {
+        var credit = credits.FirstOrDefault(c => !usedCredits.Contains(c.Id) && c.AbsoluteAmount == debit.AbsoluteAmount);
+        if (credit is not null)
+        {
+            usedCredits.Add(credit.Id);
+            pairs.Add(new { debit = TxDto(debit), credit = TxDto(credit) });
+        }
+    }
+
+    return Results.Json(pairs, jsonOptions);
+});
+
+// API — saved manual matches
+app.MapGet("/api/manual-matches", async (IStateStore stateStore) =>
+{
+    var state = await stateStore.LoadAsync();
+    var allTx = await stateStore.GetAllTransactionsAsync();
+    var txById = allTx.ToDictionary(t => t.Id);
+
+    var groups = state.ManualMatches.Select(mm => new
+    {
+        debits = mm.DebitIds.Where(txById.ContainsKey).Select(id => TxDto(txById[id])),
+        credits = mm.CreditIds.Where(txById.ContainsKey).Select(id => TxDto(txById[id]))
+    });
+
+    return Results.Json(groups, jsonOptions);
+});
+
+// API — excluded transactions
+app.MapGet("/api/excluded", async (IStateStore stateStore) =>
+{
+    var excluded = await stateStore.GetExcludedTransactionsAsync();
+    return Results.Json(excluded.Select(TxDto), jsonOptions);
+});
+
+// API — remove exclusion
+app.MapPost("/api/unexclude", async (HttpContext ctx, MonitorState monitor, IStateStore stateStore) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<ExcludeRequest>(ctx.Request.Body, jsonOptions);
+    if (body is null || string.IsNullOrEmpty(body.Id)) return Results.BadRequest("Invalid request");
+
+    monitor.State.ExcludedTransactionIds.Remove(body.Id);
+    await stateStore.RemoveExclusionAsync(body.Id);
+    return Results.Ok();
+});
+
+// API — delete transaction
+app.MapPost("/api/delete-transaction", async (HttpContext ctx, MonitorState monitor, IStateStore stateStore) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<ExcludeRequest>(ctx.Request.Body, jsonOptions);
+    if (body is null || string.IsNullOrEmpty(body.Id)) return Results.BadRequest("Invalid request");
+
+    monitor.State.MatchedTransactionIds.Remove(body.Id);
+    monitor.State.ExcludedTransactionIds.Remove(body.Id);
+    monitor.AllTransactions.RemoveAll(t => t.Id == body.Id);
+    await stateStore.DeleteTransactionAsync(body.Id);
+    return Results.Ok();
+});
+
+// API — re-initialize database
+app.MapPost("/api/reinit-db", async (MonitorState monitor, IStateStore stateStore) =>
+{
+    await stateStore.ResetDatabaseAsync();
+    monitor.Reset();
+    return Results.Ok(new { message = "Database re-initialized" });
+});
+
 // API — manually trigger reprocessing
 app.MapPost("/api/process", async (MonitorState monitor, ProcessingService processing, IOptions<FileWatcherSettings> settings) =>
 {
@@ -147,7 +251,7 @@ app.MapPost("/api/process", async (MonitorState monitor, ProcessingService proce
     return Results.Ok();
 });
 
-app.Run("http://0.0.0.0:8080");
+await app.RunAsync("http://0.0.0.0:8080");
 
 static object TxDto(TransactionRecord t) => new
 {

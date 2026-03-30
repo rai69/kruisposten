@@ -2,13 +2,13 @@ services:
   kruispost-monitor:
     build: .
     ports:
-      - "8080:8080"
+      - "6972:8080"
     volumes:
       - ./import:/data/import
       - ./processed:/data/processed
       - ./state:/data/state
     environment:
-      - Matching__SimilarityThreshold=0.5
+      - Matching__SimilarityThreshold=0.65
       - Matching__TargetBalance=300
       - Notifications__Slack__WebhookUrl=
       - Notifications__Slack__Enabled=false

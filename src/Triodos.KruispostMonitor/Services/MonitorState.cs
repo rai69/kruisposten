@@ -184,6 +184,24 @@ public class MonitorState
         }
     }
 
+    public void Reset()
+    {
+        lock (_lock)
+        {
+            CurrentMatchResult = null;
+            AllTransactions = [];
+            CurrentBalance = 0;
+            Currency = "EUR";
+            AccountIdentifier = "";
+            State = new RunState();
+            History = [];
+            LastProcessedFile = null;
+            PendingManualMatches = [];
+            UnmatchedDebits = [];
+            UnmatchedCredits = [];
+        }
+    }
+
     public bool TryExcludeTransaction(string id)
     {
         lock (_lock)

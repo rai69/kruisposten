@@ -89,7 +89,7 @@ public class Mt940ParserTests
     }
 
     [Fact]
-    public void Parse_MissingClosingBalance_ThrowsFormatException()
+    public void Parse_MissingClosingBalance_DefaultsToZero()
     {
         var content = """
             :20:STARTOFSTMT
@@ -97,8 +97,9 @@ public class Mt940ParserTests
             :28C:00001
             :60F:C260325EUR1234,56
             """;
-        var act = () => Mt940Parser.Parse(content);
-        act.Should().Throw<FormatException>().WithMessage("*:62F:*");
+        var result = Mt940Parser.Parse(content);
+        result.ClosingBalance.Should().Be(0);
+        result.Currency.Should().Be("EUR");
     }
 
     [Fact]
@@ -142,7 +143,7 @@ public class Mt940ParserTests
         """;
 
     [Fact]
-    public void Parse_TriodosNpoTransactions_AreExcluded()
+    public void Parse_TriodosNpoTransactions_AreIncluded()
     {
         var content = """
             :20:STARTOFSTMT
@@ -171,9 +172,12 @@ public class Mt940ParserTests
 
         var result = Mt940Parser.Parse(content);
 
-        // Only the NBA transaction should remain, NPO excluded
-        result.Transactions.Should().HaveCount(1);
-        result.Transactions[0].Amount.Should().Be(-11.98m);
+        // All transactions should be included (NPO no longer excluded)
+        result.Transactions.Should().HaveCount(3);
+        result.Transactions[0].Amount.Should().Be(1650.00m);
+        result.Transactions[0].TransactionType.Should().Be("NPO");
+        result.Transactions[1].Amount.Should().Be(-60.00m);
+        result.Transactions[2].Amount.Should().Be(-11.98m);
     }
 
     [Fact]

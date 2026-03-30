@@ -15,7 +15,8 @@ public static class StringSimilarity
 
         var charScore = CharacterSimilarity(a, b);
         var wordScore = WordOverlapScore(a, b);
-        return Math.Max(charScore, wordScore);
+        var containsScore = ContainsScore(a, b);
+        return new[] { charScore, wordScore, containsScore }.Max();
     }
 
     private static double CharacterSimilarity(string a, string b)
@@ -27,14 +28,39 @@ public static class StringSimilarity
 
     private static double WordOverlapScore(string a, string b)
     {
-        var wordsA = a.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
-        var wordsB = b.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+        var wordsA = SplitWords(a);
+        var wordsB = SplitWords(b);
 
         if (wordsA.Count == 0 || wordsB.Count == 0) return 0.0;
 
         var intersection = wordsA.Intersect(wordsB).Count();
         return (2.0 * intersection) / (wordsA.Count + wordsB.Count);
     }
+
+    private static double ContainsScore(string a, string b)
+    {
+        // If one string contains the other, score based on length ratio
+        if (a.Length >= 3 && b.Contains(a))
+            return (double)a.Length / b.Length;
+        if (b.Length >= 3 && a.Contains(b))
+            return (double)b.Length / a.Length;
+        return 0.0;
+    }
+
+    public static bool HasSharedWord(string? a, string? b)
+    {
+        if (a is null || b is null) return false;
+
+        var wordsA = SplitWords(a.ToLowerInvariant());
+        var wordsB = SplitWords(b.ToLowerInvariant());
+
+        return wordsA.Overlaps(wordsB);
+    }
+
+    private static HashSet<string> SplitWords(string s) =>
+        s.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+         .Where(w => w.Length >= 3)
+         .ToHashSet();
 
     private static int LevenshteinDistance(string a, string b)
     {

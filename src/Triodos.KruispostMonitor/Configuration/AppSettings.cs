@@ -15,8 +15,16 @@ public class PontoSettings
 public class MatchingSettings
 {
     public const string SectionName = "Matching";
-    public double SimilarityThreshold { get; set; } = 0.5;
+    public double SimilarityThreshold { get; set; } = 0.7;
     public decimal TargetBalance { get; set; } = 300.00m;
+    public List<SplitMatchRule> SplitRules { get; set; } = [];
+}
+
+public class SplitMatchRule
+{
+    public decimal CreditAmount { get; set; }
+    public List<decimal> DebitAmounts { get; set; } = [];
+    public string? TransactionType { get; set; }
 }
 
 public class SlackSettings
@@ -48,7 +56,7 @@ public class NotificationSettings
 public class StateSettings
 {
     public const string SectionName = "State";
-    public string FilePath { get; set; } = "state.json";
+    public string DatabasePath { get; set; } = "/data/state/kruisposten.db";
 }
 
 public class TransactionSourceSettings
